@@ -18,6 +18,7 @@
 
 #ifdef HAVE_LIBVA
 #include "ffmpeg-renderers/vaapi.h"
+#include "ffmpeg-renderers/eglvid.h"
 #endif
 
 #ifdef HAVE_LIBVDPAU
@@ -197,7 +198,7 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params)
     else {
         // The backend renderer cannot directly render to the display, so
         // we will create an SDL renderer to draw the frames.
-        m_FrontendRenderer = new SdlRenderer();
+        m_FrontendRenderer = new EGLRenderer();
         if (!m_FrontendRenderer->initialize(params)) {
             return false;
         }
