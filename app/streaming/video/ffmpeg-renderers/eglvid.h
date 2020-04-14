@@ -26,5 +26,6 @@ private:
     unsigned m_vertices_frame;
     SDL_GLContext m_context;
     SDL_Window *m_window;
+    int m_Position_loc;
+    int m_tex_coord_loc;
 };
-

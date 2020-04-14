@@ -1,6 +1,12 @@
 #version 330 core
-layout (location = 0) in vec3 aPos;
+
+layout (location = 0) in vec2 aPosition; // 2D: X,Y
+layout (location = 1) in vec2 aTexCoord;
+out vec2 vTextCoord;
+// univorm vec4 uMatrix;
 
 void main() {
-	gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+	vTextCoord = aTexCoord;
+	//gl_Position = uMatrix * aPosition;
+	gl_Position = vec4(aPosition, 0, 1);
 }

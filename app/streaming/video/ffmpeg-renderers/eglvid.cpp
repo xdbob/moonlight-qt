@@ -16,7 +16,7 @@
 #include <va/va_drmcommon.h>
 
 /* TODO:
- *  - draw the video
+ *  - color convertion (handle color plane)
  *  - error handling
  *  - resources cleanup
  *  - code refacto/cleanup
@@ -245,10 +245,8 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     glGenTextures(2, m_textures);
 
-    unsigned int VBO;
-    glGenBuffers(1, &VBO);
+#if 0
     // TODO: error handling
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
     static const float triangle_vertices[] = {
     #if 0
     	-0.5f, -0.5f, 0.0f,
@@ -271,6 +269,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     glBindVertexArray(m_vertices_frame);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof (float), nullptr);
     glEnableVertexAttribArray(0);
+#endif
 
     return true;
 }
@@ -310,6 +309,7 @@ static VADRMPRIMESurfaceDescriptor hwmap(AVFrame *frame) {
 
 void EGLRenderer::renderFrame(AVFrame* frame)
 {
+    static unsigned int VAO;
     if (frame->hw_frames_ctx != nullptr) {
         // If we are acting as the frontend for a hardware
         // accelerated decoder, we'll need to read the frame
@@ -327,10 +327,55 @@ void EGLRenderer::renderFrame(AVFrame* frame)
                         m_SwPixelFormat);
 	    // XXX: TODO: Handle other pixel formats
 	    SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
-	    compileShader();
+	    if (!compileShader())
+		    return;
+#if 0
+	    // XXX: TODO: error check + cleanup
+	    m_Position_loc = glGetAttribLocation(m_shader_program, "aPosition");
+	    m_tex_coord_loc = glGetAttribLocation(m_shader_program, "aTexCoord");
+#endif
+		static const float triangle_vertices[] = {
+#if 0
+			0.5f, 0.5f,
+			0.5f, -0.5f,
+			-0.5f, -0.5f,
+			-0.5f, 0.5f,
+#else
+			// pos .... // tex coords
+			1.0f, 1.0f, 1.0f, 0.0f,
+			1.0f, -1.0f, 1.0f, 1.0f,
+			-1.0f, -1.0f, 0.0f, 1.0f,
+			-1.0f, 1.0f, 0.0f, 0.0f,
+
+#endif
+		};
+		static const unsigned int indices[] = {
+			0, 1, 3,
+			1, 2, 3,
+		};
+
+		unsigned int VBO, EBO;
+		glGenVertexArrays(1, &VAO);
+		glGenBuffers(1, &VBO);
+		glGenBuffers(1, &EBO);
+
+		glBindVertexArray(VAO);
+
+		glBindBuffer(GL_ARRAY_BUFFER, VBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof (triangle_vertices), triangle_vertices, GL_STATIC_DRAW);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof (indices), indices, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof (float)));
+		glEnableVertexAttribArray(1);
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindVertexArray(0);
         }
 
-#if 0
 	auto dma_img = hwmap(frame);
 	for (size_t i = 0; i < dma_img.num_layers; ++i) {
 		const auto &layer = dma_img.layers[i];
@@ -366,6 +411,7 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 				     "eglCreateImageKHR() FAILED !!!");
 		}
 
+		glActiveTexture(GL_TEXTURE0 + i);
 		glBindTexture(GL_TEXTURE_2D, m_textures[i]);
 		glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
 
@@ -375,7 +421,6 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
-#endif
 	} else {
 		// TODO: load texture for SW decoding ?
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -383,12 +428,21 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 		return;
 	}
 
+
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	glUseProgram(m_shader_program);
-	glBindVertexArray(m_vertices_frame);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+#if 0
+	int tmp = glGetUniformLocation(shaderProgram, "plane1");
+
+	tmp = glGetUniformLocation(shaderProgram, "plane2");
+#endif
+
+	glBindVertexArray(VAO);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
 
 	SDL_GL_SwapWindow(m_window);
 }
