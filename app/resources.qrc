@@ -19,5 +19,7 @@
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>
         <file alias="ModeSeven.ttf">ModeSeven.ttf</file>
+        <file alias="nv12.frag">shaders/nv12.frag</file>
+        <file alias="nv12.vert">shaders/nv12.vert</file>
     </qresource>
 </RCC>

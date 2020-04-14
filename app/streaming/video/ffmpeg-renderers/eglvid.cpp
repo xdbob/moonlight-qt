@@ -16,12 +16,13 @@
 #include <va/va_drmcommon.h>
 
 /* TODO:
- *  - draw something
  *  - draw the video
  *  - error handling
  *  - resources cleanup
  *  - code refacto/cleanup
  *  - remove now deadcode
+ *  - handle more pix FMTs
+ *  - handle software decoding
  */
 
 EGLRenderer::EGLRenderer()
@@ -30,6 +31,7 @@ EGLRenderer::EGLRenderer()
       m_egl_display(nullptr),
       m_has_dmabuf_import(false),
       m_textures{0, 0},
+      m_shader_program(0),
       m_context(0),
       m_window(nullptr)
 {}
@@ -71,6 +73,96 @@ bool EGLRenderer::isPixelFormatSupported(int, AVPixelFormat pixelFormat)
     default:
         return false;
     }
+}
+
+static GLuint load_and_build_shader(GLenum shader_type,
+				    const char *file,
+				    const QVector<QByteArray>& extra_code) {
+	GLuint shader = glCreateShader(shader_type);
+	if (!shader || shader == GL_INVALID_ENUM)
+		return 0;
+
+	auto source_data = Path::readDataFile(file);
+	QVector<const char *> data;
+	data.reserve(extra_code.count() + 1);
+	QVector<GLint> data_size;
+	data_size.reserve(extra_code.count() + 1);
+	for (const auto& a : extra_code) {
+		data.append(a.data());
+		data_size.append(a.size());
+	}
+	data.append(source_data);
+	data_size.append(source_data.size());
+
+	glShaderSource(shader, data.count(), data.data(), data_size.data());
+	glCompileShader(shader);
+	GLint status;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (!status) {
+		char shader_log[512];
+		glGetShaderInfoLog(shader, sizeof (shader_log), nullptr, shader_log);
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+			     "EGLRenderer: cannot load shader \"%s\": %s",
+			     file, shader_log);
+		return 0;
+	}
+
+	return shader;
+}
+
+bool EGLRenderer::compileShader() {
+	if (m_shader_program) {
+		glDeleteProgram(m_shader_program);
+		m_shader_program = 0;
+	}
+	SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NONE);
+
+	// XXX: TODO: other formats
+	SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NV12);
+
+	bool ret = false;
+
+	QVector<QByteArray> shader_args;
+	GLuint vertex_shader = load_and_build_shader(GL_VERTEX_SHADER,
+						     "nv12.vert",
+						     shader_args);
+	if (!vertex_shader)
+		return false;
+
+	GLuint fragment_shader = load_and_build_shader(GL_FRAGMENT_SHADER,
+						       "nv12.frag",
+						       shader_args);
+	if (!fragment_shader)
+		goto frag_error;
+
+	m_shader_program = glCreateProgram();
+	if (!m_shader_program) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+			     "EGLRenderer: cannot create shader program");
+		goto prog_fail_create;
+	}
+
+	glAttachShader(m_shader_program, vertex_shader);
+	glAttachShader(m_shader_program, fragment_shader);
+	glLinkProgram(m_shader_program);
+	int status;
+	glGetProgramiv(m_shader_program, GL_LINK_STATUS, &status);
+	if (status) {
+		ret = true;
+	} else {
+		char shader_log[512];
+		glGetProgramInfoLog(m_shader_program, sizeof (shader_log), nullptr, shader_log);
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+			     "EGLRenderer: cannot link shader program: %s",
+			     shader_log);
+		glDeleteProgram(m_shader_program);
+	}
+
+prog_fail_create:
+	glDeleteShader(fragment_shader);
+frag_error:
+	glDeleteShader(vertex_shader);
+	return ret;
 }
 
 bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
@@ -123,14 +215,15 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     const auto extentionsstr = eglQueryString(m_egl_display, EGL_EXTENSIONS);
     if (!extentionsstr) {
-	    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
-	    return false;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
+        return false;
     }
     const auto extensions = QByteArray::fromRawData(extentionsstr, qstrlen(extentionsstr));
     if (!extensions.contains("EGL_EXT_image_dma_buf_import")) {
-	    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: DMABUF unsupported...");
-	    return false;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: DMABUF unsupported...");
+        return false;
     }
+    // XXX: TODO: check all extentions
     m_has_dmabuf_import = extensions.contains("EGL_EXT_image_dma_buf_import_modifiers");
 
 #if 0
@@ -138,6 +231,12 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 #endif
 
 
+
+    /* Request opengl 3.2 context.
+     * SDL doesn't have the ability to choose which profile at this time of writing,
+     * but it should default to the core profile */
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     m_context = SDL_GL_CreateContext(params->window);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -145,6 +244,33 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     SDL_GL_SwapWindow(params->window);
 
     glGenTextures(2, m_textures);
+
+    unsigned int VBO;
+    glGenBuffers(1, &VBO);
+    // TODO: error handling
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    static const float triangle_vertices[] = {
+    #if 0
+    	-0.5f, -0.5f, 0.0f,
+    	0.5f, -0.5f, 0.0f,
+    	0.5f, 0.5f, 0.0f,
+    	-1.0f, -1.0f, 0.0f,
+    	-1.0f, 1.0f, 0.0f,
+    	1.0f, -1.0f, 0.0f,
+    	1.0f, 1.0f, 0.0f,
+    #endif
+    	-0.9f, -0.9f, 0.0f,
+    	-0.9f, 0.9f, 0.0f,
+    	0.9f, -0.9f, 0.0f,
+    	0.9f, 0.9f, 0.0f,
+    };
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof (triangle_vertices), triangle_vertices, GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_vertices_frame);
+    glBindVertexArray(m_vertices_frame);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof (float), nullptr);
+    glEnableVertexAttribArray(0);
 
     return true;
 }
@@ -199,8 +325,12 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Selected read-back format: %d",
                         m_SwPixelFormat);
+	    // XXX: TODO: Handle other pixel formats
+	    SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
+	    compileShader();
         }
 
+#if 0
 	auto dma_img = hwmap(frame);
 	for (size_t i = 0; i < dma_img.num_layers; ++i) {
 		const auto &layer = dma_img.layers[i];
@@ -238,23 +368,14 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 
 		glBindTexture(GL_TEXTURE_2D, m_textures[i]);
 		glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-		glFinish();
 
 		// ???
-		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-#if 0
-        GLuint fb;
-	glGenFramebuffers(1, &fb);
-	glBindFramebuffer(GL_FRAMEBUFFER, fb);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_textures[i], 0);
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "glCheckFramebufferStatus()");
-		glDeleteFramebuffers(1, &fb);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 #endif
-		}
-
 	} else {
 		// TODO: load texture for SW decoding ?
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -262,6 +383,12 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 		return;
 	}
 
+	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
 
-    SDL_GL_SwapWindow(m_window);
+	glUseProgram(m_shader_program);
+	glBindVertexArray(m_vertices_frame);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	SDL_GL_SwapWindow(m_window);
 }

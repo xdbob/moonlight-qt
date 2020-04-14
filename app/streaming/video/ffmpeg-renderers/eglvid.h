@@ -16,10 +16,14 @@ public:
 private:
     void renderOverlay(Overlay::OverlayType type);
 
+    bool compileShader();
+
     int m_SwPixelFormat;
     void *m_egl_display;
     bool m_has_dmabuf_import;
     unsigned m_textures[2];
+    unsigned m_shader_program;
+    unsigned m_vertices_frame;
     SDL_GLContext m_context;
     SDL_Window *m_window;
 };
