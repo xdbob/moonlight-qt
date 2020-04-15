@@ -6,8 +6,11 @@
 #include "path.h"
 
 #include <QDir>
+#include <QMatrix4x4>
+#include <QMatrix3x3>
 
 #include <Limelight.h>
+#include <unistd.h>
 
 #include <SDL_egl.h>
 #include <SDL_opengl.h>
@@ -23,6 +26,7 @@
  *  - remove now deadcode
  *  - handle more pix FMTs
  *  - handle software decoding
+ *  - handle window resize
  */
 
 EGLRenderer::EGLRenderer()
@@ -307,6 +311,20 @@ static VADRMPRIMESurfaceDescriptor hwmap(AVFrame *frame) {
 	return va_desc;
 }
 
+static const float *getLuma(enum AVColorSpace colorspace) {
+	static const float BT709[] = {0.2126f, 0.7152f, 0.0722f};
+	static const float BT601[] = {0.2627f, 0.6780f, 0.0593f};
+	switch (colorspace) {
+	case AVCOL_SPC_BT709:
+		return BT709;
+	case AVCOL_SPC_BT470BG:
+	case AVCOL_SPC_SMPTE170M:
+		return BT601;
+	default:
+	return nullptr;
+	}
+}
+
 void EGLRenderer::renderFrame(AVFrame* frame)
 {
     static unsigned int VAO;
@@ -354,6 +372,29 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 			1, 2, 3,
 		};
 
+#if 0
+		const auto tmp = getLuma(frame->colorspace);
+		float bscale = 0.5f / (tmp[2] - 1.0f);
+		float rscale = 0.5f / (tmp[0] - 1.0f);
+		auto mat = QMatrix4x4(
+			tmp[0], tmp[1], tmp[2], 0.0f,
+			bscale * tmp[0], bscale * tmp[1], 0.5f, 0.0f,
+			0.5f, rscale * tmp[1], rscale * tmp[2], 0.0f,
+			0.0f, 0.0f, 0.0f, 1.0f
+
+		).inverted().toGenericMatrix<3, 3>();
+#else
+		/* Coef from: https://www.renesas.com/eu/en/www/doc/application-note/an9717.pdf */
+		float tamere[] = {
+			1.164f, 0.0f, 1.596f,
+			1.164f, -0.392f, -0.813f,
+			1.164f, 2.017f, 0.0f,
+		};
+		auto mat = QMatrix3x3(tamere);
+#endif
+
+		glUseProgram(m_shader_program);
+
 		unsigned int VBO, EBO;
 		glGenVertexArrays(1, &VAO);
 		glGenBuffers(1, &VBO);
@@ -374,6 +415,9 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
+
+		int yuvmat_location = glGetUniformLocation(m_shader_program, "yuvmat");
+		glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, mat.data());
         }
 
 	auto dma_img = hwmap(frame);
@@ -381,10 +425,17 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 		const auto &layer = dma_img.layers[i];
 		const auto &object = dma_img.objects[layer.object_index[0]];
 
+		EGLint width = dma_img.width;
+		EGLint height = dma_img.height;
+		if (i == 1) {
+			width /= 2;
+			height /= 2;
+		}
+
 		EGLAttrib attribs[17] = {
 			EGL_LINUX_DRM_FOURCC_EXT, (EGLint)layer.drm_format,
-			EGL_WIDTH, (EGLint)dma_img.width,
-			EGL_HEIGHT, (EGLint)dma_img.height,
+			EGL_WIDTH, width,
+			EGL_HEIGHT, height,
 			EGL_DMA_BUF_PLANE0_FD_EXT, object.fd,
 			EGL_DMA_BUF_PLANE0_OFFSET_EXT, (EGLint)layer.offset[0],
 			EGL_DMA_BUF_PLANE0_PITCH_EXT, (EGLint)layer.pitch[0],
@@ -420,7 +471,11 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		eglDestroyImage(m_egl_display, image);
 	}
+	for (size_t i = 0; i < dma_img.num_objects; ++i)
+		close(dma_img.objects[i].fd);
 	} else {
 		// TODO: load texture for SW decoding ?
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -434,10 +489,11 @@ void EGLRenderer::renderFrame(AVFrame* frame)
 
 	glUseProgram(m_shader_program);
 
-#if 0
-	int tmp = glGetUniformLocation(shaderProgram, "plane1");
-
-	tmp = glGetUniformLocation(shaderProgram, "plane2");
+#if 1
+	int tmp = glGetUniformLocation(m_shader_program, "plane1");
+	glUniform1i(tmp, 0);
+	tmp = glGetUniformLocation(m_shader_program, "plane2");
+	glUniform1i(tmp, 1);
 #endif
 
 	glBindVertexArray(VAO);
