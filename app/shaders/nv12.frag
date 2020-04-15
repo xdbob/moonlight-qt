@@ -1,4 +1,5 @@
-#version 330 core
+#version 300 es
+precision mediump float;
 out vec4 FragColor;
 
 in vec2 vTextCoord;
@@ -12,8 +13,8 @@ void main() {
 		texture(plane1, vTextCoord)[0],
 		texture(plane2, vTextCoord).xy
 	);
-	
-	//YCbCr -= vec3(0, vec2(0.5));
+
+	// TODO: this should be an offset parameter
 	YCbCr -= vec3(0.0627451017, 0.501960814, 0.501960814);
 	FragColor = vec4(clamp(yuvmat * YCbCr, 0.0, 1.0), 1.0f);
 }
