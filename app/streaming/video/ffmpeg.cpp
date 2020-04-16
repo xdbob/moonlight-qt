@@ -18,7 +18,6 @@
 
 #ifdef HAVE_LIBVA
 #include "ffmpeg-renderers/vaapi.h"
-#include "ffmpeg-renderers/eglvid.h"
 #endif
 
 #ifdef HAVE_LIBVDPAU
@@ -31,6 +30,10 @@
 
 #ifdef HAVE_DRM
 #include "ffmpeg-renderers/drm.h"
+#endif
+
+#ifdef HAVE_EGL
+#include "ffmpeg-renderers/eglvid.h"
 #endif
 
 // This is gross but it allows us to use sizeof()
@@ -196,13 +199,15 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params)
         m_FrontendRenderer = m_BackendRenderer;
     }
     else {
+#ifdef HAVE_EGL
         m_FrontendRenderer = new EGLRenderer();
         if (m_FrontendRenderer->initialize(params)) {
             return true;
         }
+        delete m_FrontendRenderer;
+#endif
         // The backend renderer cannot directly render to the display, so
         // we will create an SDL renderer to draw the frames.
-        delete m_FrontendRenderer;
         m_FrontendRenderer = new SdlRenderer();
         if (!m_FrontendRenderer->initialize(params)) {
             return false;

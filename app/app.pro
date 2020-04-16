@@ -57,7 +57,7 @@ macx {
 
 unix:!macx {
     CONFIG += link_pkgconfig
-    PKGCONFIG += openssl sdl2 SDL2_ttf egl opus
+    PKGCONFIG += openssl sdl2 SDL2_ttf opus
 
     # SLAudio is used on Steam Link
     !config_SL {
@@ -88,6 +88,10 @@ unix:!macx {
                 CONFIG += libva-drm
             }
             CONFIG += libva
+        }
+
+        packagesExist(egl) {
+            CONFIG += egl
         }
 
         packagesExist(vdpau) {
@@ -235,8 +239,6 @@ libva-wayland {
 
     PKGCONFIG += libva-drm
     DEFINES += HAVE_LIBVA_DRM
-    SOURCES += streaming/video/ffmpeg-renderers/eglvid.cpp
-    HEADERS += streaming/video/ffmpeg-renderers/eglvid.h
 }
 libvdpau {
     message(VDPAU renderer selected)
@@ -258,6 +260,13 @@ libdrm {
     DEFINES += HAVE_DRM
     SOURCES += streaming/video/ffmpeg-renderers/drm.cpp
     HEADERS += streaming/video/ffmpeg-renderers/drm.h
+}
+egl {
+    message(EGL renderer selected)
+
+    DEFINES += HAVE_EGL
+    SOURCES += streaming/video/ffmpeg-renderers/eglvid.cpp
+    HEADERS += streaming/video/ffmpeg-renderers/eglvid.h
 }
 config_SL {
     message(Steam Link build configuration selected)

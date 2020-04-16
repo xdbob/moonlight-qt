@@ -27,6 +27,7 @@
  *  - handle software decoding
  *  - handle window resize
  *  - Fix X11
+ *  - remove hard dependency to vaapi
  */
 
 /* DOC/misc:
