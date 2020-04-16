@@ -196,9 +196,14 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params)
         m_FrontendRenderer = m_BackendRenderer;
     }
     else {
+        m_FrontendRenderer = new EGLRenderer();
+        if (m_FrontendRenderer->initialize(params)) {
+            return true;
+        }
         // The backend renderer cannot directly render to the display, so
         // we will create an SDL renderer to draw the frames.
-        m_FrontendRenderer = new EGLRenderer();
+        delete m_FrontendRenderer;
+        m_FrontendRenderer = new SdlRenderer();
         if (!m_FrontendRenderer->initialize(params)) {
             return false;
         }
