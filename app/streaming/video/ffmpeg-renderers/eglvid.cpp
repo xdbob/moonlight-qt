@@ -14,6 +14,8 @@
 #include <SDL_egl.h>
 #include <SDL_opengl.h>
 #include <SDL_syswm.h>
+#include <SDL_opengles2.h>
+#include <SDL_opengles2_gl2ext.h>
 #include <libavutil/hwcontext_vaapi.h>
 #include <va/va_drmcommon.h>
 
@@ -21,7 +23,6 @@
  *  - error handling
  *  - resources cleanup
  *  - code refacto/cleanup
- *  - remove now deadcode
  *  - handle more pix FMTs
  *  - handle software decoding
  *  - handle window resize
@@ -189,6 +190,12 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
+    // TODO: check version
+    if (!eglInitialize(m_egl_display, nullptr, nullptr)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot initialize EGL");
+        return false;
+    }
+
     const auto egl_extentions_str = eglQueryString(m_egl_display, EGL_EXTENSIONS);
     if (!egl_extentions_str) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
@@ -196,6 +203,13 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     }
     const auto egl_extensions = QByteArray::fromRawData(egl_extentions_str,
                                                         qstrlen(egl_extentions_str));
+
+    if (!egl_extensions.contains("EGL_KHR_image_base") &&
+        !egl_extensions.contains("EGL_KHR_image")) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported...");
+        return false;
+    }
+
     if (!egl_extensions.contains("EGL_EXT_image_dma_buf_import")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: DMABUF unsupported...");
         return false;
@@ -231,11 +245,11 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     glGenTextures(2, m_textures);
     for (size_t i = 0; i < 2; ++i) {
-        glBindTexture(GL_TEXTURE_2D, m_textures[i]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
+        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
     GLenum err = glGetError();
@@ -395,9 +409,11 @@ void EGLRenderer::renderFrame(AVFrame* frame)
                          "eglCreateImageKHR() FAILED !!!");
             }
 
+            // https://gist.github.com/rexguo/6696123
             glActiveTexture(GL_TEXTURE0 + i);
-            glBindTexture(GL_TEXTURE_2D, m_textures[i]);
-            glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
+            glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
+            // TODO: sync
 
             eglDestroyImage(m_egl_display, image);
         }
