@@ -26,7 +26,6 @@
  *  - handle more pix FMTs
  *  - handle software decoding
  *  - handle window resize
- *  - Fix X11
  *  - remove hard dependency to vaapi
  */
 
@@ -205,20 +204,6 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
                                               info.info.wl.display, nullptr);
         break;
     case SDL_SYSWM_X11:
-        /* `glEGLImageTargetTexture2DOES` segfaults on X11 I have to figure out
-         * why ...
-         * #0  0x00007f8fde9f8ee8 in dri2_lookup_egl_image (screen=<optimized out>, handle=0x563d3d2729d0) at ../mesa-20.0.4/src/gallium/state_trackers/dri/dri_helpers.c:247
-         * #1  0x00007f8fde9f97ab in dri_get_egl_image (smapi=<optimized out>, egl_image=<optimized out>, stimg=0x7fff3def10b0)
-         *     at ../mesa-20.0.4/src/gallium/state_trackers/dri/dri_screen.c:463
-         * #2  0x00007f8fdea31120 in st_get_egl_image (ctx=ctx@entry=0x563d3d244a80, image_handle=<optimized out>, usage=usage@entry=8,
-         *     error=error@entry=0x7f8fdf7ad0e4 "glEGLImageTargetTexture2D", out=out@entry=0x7fff3def10b0, native_supported=native_supported@entry=0x7fff3def10af)
-         *     at ../mesa-20.0.4/src/mesa/state_tracker/st_cb_eglimage.c:131
-         * #3  0x00007f8fdea31896 in st_egl_image_target_texture_2d (ctx=0x563d3d244a80, target=<optimized out>, texObj=0x563d3d25d470, texImage=0x563d3cfe90f0,
-         *     image_handle=<optimized out>) at ../mesa-20.0.4/src/mesa/state_tracker/st_cb_eglimage.c:325
-         * #4  0x00007f8fdeb7bbc6 in egl_image_target_texture (ctx=0x563d3d244a80, texObj=0x563d3d25d470, target=36197, image=0x563d3d2729d0, tex_storage=<optimized out>,
-         *     caller=0x7f8fdf7ad0e4 "glEGLImageTargetTexture2D") at ../mesa-20.0.4/src/mesa/main/teximage.c:3444
-         */
-        return false;
         m_egl_display = eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
                                               info.info.x11.display, nullptr);
         break;

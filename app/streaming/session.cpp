@@ -360,7 +360,10 @@ bool Session::initialize()
     }
 
 #ifdef HAVE_EGL
-    /* Request opengl ES 3.0 context for EGL Renderer */
+    /* Request opengl ES 3.0 context for EGL Renderer, otherwise it will
+     * SIGSEGV: https://gitlab.freedesktop.org/mesa/mesa/issues/1011
+     */
+    SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
