@@ -16,8 +16,6 @@
 #include <SDL_syswm.h>
 #include <SDL_opengles2.h>
 #include <SDL_opengles2_gl2ext.h>
-#include <libavutil/hwcontext_vaapi.h>
-#include <va/va_drmcommon.h>
 
 /* TODO:
  *  - error handling
@@ -26,7 +24,6 @@
  *  - handle more pix FMTs
  *  - handle software decoding
  *  - handle window resize
- *  - remove hard dependency to vaapi
  */
 
 /* DOC/misc:
@@ -43,7 +40,7 @@
  *  - https://wiki.libsdl.org/CategoryVideo
  */
 
-EGLRenderer::EGLRenderer()
+EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
     :
         m_SwPixelFormat(AV_PIX_FMT_NONE),
         m_egl_display(nullptr),
@@ -51,8 +48,12 @@ EGLRenderer::EGLRenderer()
         m_textures{0, 0},
         m_shader_program(0),
         m_context(0),
-        m_window(nullptr)
-{}
+        m_window(nullptr),
+        m_frontend(frontend_renderer)
+{
+    SDL_assert(frontend_renderer);
+    SDL_assert(frontend_renderer->canExportEGL());
+}
 
 EGLRenderer::~EGLRenderer()
 {}
@@ -295,35 +296,6 @@ void EGLRenderer::renderOverlay([[maybe_unused]] Overlay::OverlayType type)
     // TODO: FIXME
 }
 
-static VADRMPRIMESurfaceDescriptor hwmap(AVFrame *frame) {
-    // TODO: pass errors
-    auto hwFrameCtx = (AVHWFramesContext*)frame->hw_frames_ctx->data;
-    AVVAAPIDeviceContext* vaDeviceContext = (AVVAAPIDeviceContext*)hwFrameCtx->device_ctx->hwctx;
-
-    VASurfaceID surface_id = (VASurfaceID)(uintptr_t)frame->data[3];
-    VADRMPRIMESurfaceDescriptor va_desc;
-    VAStatus st = vaExportSurfaceHandle(vaDeviceContext->display,
-            surface_id,
-            VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
-            VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
-            &va_desc);
-    if (st != VA_STATUS_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "vaExportSurfaceHandle failed: %d", st);
-    }
-
-    st = vaSyncSurface(vaDeviceContext->display, surface_id);
-    if (st != VA_STATUS_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "vaSyncSurface failed: %d", st);
-    }
-    // Is it needed ?
-    va_desc.width = frame->width;
-    va_desc.height = frame->height;
-    // EOIs it needed
-    return va_desc;
-}
-
 void EGLRenderer::renderFrame(AVFrame* frame)
 {
     static unsigned int VAO;
@@ -396,60 +368,15 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             glUniform1i(tmp, 1);
         }
 
-        auto dma_img = hwmap(frame);
-        for (size_t i = 0; i < dma_img.num_layers; ++i) {
-            const auto &layer = dma_img.layers[i];
-            const auto &object = dma_img.objects[layer.object_index[0]];
-
-            EGLint width = dma_img.width;
-            EGLint height = dma_img.height;
-            if (i == 1) {
-                width /= 2;
-                height /= 2;
-            }
-
-            EGLAttrib attribs[17] = {
-                EGL_LINUX_DRM_FOURCC_EXT, (EGLint)layer.drm_format,
-                EGL_WIDTH, width,
-                EGL_HEIGHT, height,
-                EGL_DMA_BUF_PLANE0_FD_EXT, object.fd,
-                EGL_DMA_BUF_PLANE0_OFFSET_EXT, (EGLint)layer.offset[0],
-                EGL_DMA_BUF_PLANE0_PITCH_EXT, (EGLint)layer.pitch[0],
-                EGL_NONE,
-            };
-            if (m_has_dmabuf_import) {
-                static const EGLAttrib extra[] = {
-                    EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
-                    (EGLint)object.drm_format_modifier,
-                    EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT,
-                    (EGLint)(object.drm_format_modifier >> 32),
-                    EGL_NONE
-                };
-                memcpy((void *)(&attribs[12]), (void *)extra, sizeof (extra));
-            }
-            const auto image = eglCreateImage(m_egl_display,
-                    EGL_NO_CONTEXT,
-                    EGL_LINUX_DMA_BUF_EXT,
-                    nullptr,
-                    attribs
-                );
-            if (!image) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "eglCreateImageKHR() FAILED !!!");
-            }
-
-            // https://gist.github.com/rexguo/6696123
+        EGLImage imgs[EGL_MAX_PLANES];
+        ssize_t plane_count = m_frontend->exportEGLImages(frame, m_egl_display, imgs);
+        if (plane_count < 0)
+            return;
+        for (ssize_t i = 0; i < plane_count; ++i) {
             glActiveTexture(GL_TEXTURE0 + i);
             glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
-            glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
-            // TODO: sync
-
-            eglDestroyImage(m_egl_display, image);
+            glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, imgs[i]);
         }
-
-        // Cleanup should be after SwapWindow ?
-        for (size_t i = 0; i < dma_img.num_objects; ++i)
-            close(dma_img.objects[i].fd);
 
         } else {
             // TODO: load texture for SW decoding ?
@@ -462,4 +389,5 @@ void EGLRenderer::renderFrame(AVFrame* frame)
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     SDL_GL_SwapWindow(m_window);
+    m_frontend->freeEGLImages(m_egl_display);
 }

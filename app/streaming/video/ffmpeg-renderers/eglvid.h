@@ -4,7 +4,7 @@
 
 class EGLRenderer : public IFFmpegRenderer {
 public:
-    EGLRenderer();
+    EGLRenderer(IFFmpegRenderer *frontend_renderer);
     virtual ~EGLRenderer() override;
     virtual bool initialize(PDECODER_PARAMETERS params) override;
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary** options) override;
@@ -28,4 +28,5 @@ private:
     SDL_Window *m_window;
     int m_Position_loc;
     int m_tex_coord_loc;
+    IFFmpegRenderer *m_frontend;
 };

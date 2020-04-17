@@ -5,6 +5,9 @@
 #include <streaming/streamutils.h>
 
 #include <SDL_syswm.h>
+#ifdef HAVE_EGL
+#include <SDL_egl.h>
+#endif
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -13,7 +16,10 @@ VAAPIRenderer::VAAPIRenderer()
     : m_HwContext(nullptr),
       m_DrmFd(-1)
 {
-
+#ifdef HAVE_EGL
+    m_descriptor.num_layers = 0;
+    m_descriptor.num_objects = 0;
+#endif
 }
 
 VAAPIRenderer::~VAAPIRenderer()
@@ -361,3 +367,108 @@ VAAPIRenderer::renderFrame(AVFrame* frame)
         SDL_assert(false);
     }
 }
+
+#ifdef HAVE_EGL
+
+bool
+VAAPIRenderer::canExportEGL() {
+    return true;
+}
+
+ssize_t
+VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
+                               EGLImage images[EGL_MAX_PLANES]) {
+    ssize_t count = 0;
+    auto hwFrameCtx = (AVHWFramesContext*)frame->hw_frames_ctx->data;
+    AVVAAPIDeviceContext* vaDeviceContext = (AVVAAPIDeviceContext*)hwFrameCtx->device_ctx->hwctx;
+
+    VASurfaceID surface_id = (VASurfaceID)(uintptr_t)frame->data[3];
+    VAStatus st = vaExportSurfaceHandle(vaDeviceContext->display,
+                                        surface_id,
+                                        VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
+                                        VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
+                                        &m_descriptor);
+    if (st != VA_STATUS_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "vaExportSurfaceHandle failed: %d", st);
+        return -1;
+    }
+
+    SDL_assert(m_descriptor.num_layers <= EGL_MAX_PLANES);
+
+    st = vaSyncSurface(vaDeviceContext->display, surface_id);
+    if (st != VA_STATUS_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "vaSyncSurface failed: %d", st);
+        goto sync_fail;
+    }
+
+    // Is it needed
+    m_descriptor.width = frame->width;
+    m_descriptor.height = frame->height;
+
+    for (size_t i = 0; i < m_descriptor.num_layers; ++i) {
+        const auto &layer = m_descriptor.layers[i];
+        const auto &object = m_descriptor.objects[layer.object_index[0]];
+        EGLint w = i == 0 ? frame->width : frame->width / 2;
+        EGLint h = i == 0 ? frame->height : frame->height / 2;
+
+        // TODO: how to get has_dmabuf_import ?
+        bool dmabuf_import = false;
+        EGLAttrib attribs[17] = {
+            EGL_LINUX_DRM_FOURCC_EXT, (EGLint)layer.drm_format,
+            EGL_WIDTH, w,
+            EGL_HEIGHT, h,
+            EGL_DMA_BUF_PLANE0_FD_EXT, object.fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, (EGLint)layer.offset[0],
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, (EGLint)layer.pitch[0],
+            EGL_NONE,
+        };
+        if (dmabuf_import) {
+            const EGLAttrib extra[] = {
+                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
+                (EGLint)object.drm_format_modifier,
+                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT,
+                (EGLint)(object.drm_format_modifier >> 32),
+                EGL_NONE,
+            };
+            memcpy((void *)(&attribs[12]), (void *)extra, sizeof (extra));
+        }
+        m_last_images[i] = images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
+                                                      EGL_LINUX_DMA_BUF_EXT,
+                                                      nullptr, attribs);
+        if (!m_last_images[i]) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "eglCreateImage() Failed");
+            goto create_image_fail;
+        }
+        ++count;
+    }
+    return count;
+
+create_image_fail:
+    for (ssize_t i = 0; i < count; ++i) {
+        eglDestroyImage(dpy, m_last_images[i]);
+    }
+sync_fail:
+    for (size_t i = 0; i < m_descriptor.num_objects; ++i) {
+        close(m_descriptor.objects[i].fd);
+    }
+    m_descriptor.num_objects = 0;
+    m_descriptor.num_layers = 0;
+    return -1;
+}
+
+void
+VAAPIRenderer::freeEGLImages(EGLDisplay dpy) {
+    for (size_t i = 0; i < m_descriptor.num_layers; ++i) {
+        eglDestroyImage(dpy, m_last_images[i]);
+    }
+    for (size_t i = 0; i < m_descriptor.num_objects; ++i) {
+        close(m_descriptor.objects[i].fd);
+    }
+    m_descriptor.num_layers = 0;
+    m_descriptor.num_objects = 0;
+}
+
+#endif
