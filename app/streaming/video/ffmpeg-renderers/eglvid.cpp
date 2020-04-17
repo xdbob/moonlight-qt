@@ -18,8 +18,6 @@
 #include <SDL_opengles2_gl2ext.h>
 
 /* TODO:
- *  - error handling
- *  - resources cleanup
  *  - code refacto/cleanup
  *  - handle more pix FMTs
  *  - handle software decoding
@@ -40,23 +38,49 @@
  *  - https://wiki.libsdl.org/CategoryVideo
  */
 
+static QStringList egl_get_extensions(EGLDisplay dpy) {
+    const auto egl_extensions_str = eglQueryString(dpy, EGL_EXTENSIONS);
+    if (!egl_extensions_str) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
+        return QStringList();
+    }
+    return QString(egl_extensions_str).split(" ");
+}
+
+EGLExtensions::EGLExtensions(EGLDisplay dpy) :
+    m_extensions(egl_get_extensions(dpy))
+{}
+
+bool EGLExtensions::is_supported(const QString &extension) const {
+    return m_extensions.contains(extension);
+}
+
 EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
     :
         m_SwPixelFormat(AV_PIX_FMT_NONE),
         m_egl_display(nullptr),
-        m_has_dmabuf_import(false),
-        m_textures{0, 0},
+        m_textures{0},
         m_shader_program(0),
         m_context(0),
         m_window(nullptr),
-        m_frontend(frontend_renderer)
+        m_frontend(frontend_renderer),
+        m_vao(0)
 {
     SDL_assert(frontend_renderer);
     SDL_assert(frontend_renderer->canExportEGL());
 }
 
 EGLRenderer::~EGLRenderer()
-{}
+{
+    if (m_context) {
+        if (m_shader_program)
+            glDeleteProgram(m_shader_program);
+        if (m_vao)
+            glDeleteVertexArrays(1, &m_vao);
+        glDeleteTextures(EGL_MAX_PLANES, m_textures);
+        SDL_GL_DeleteContext(m_context);
+    }
+}
 
 bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
 {
@@ -236,29 +260,16 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    const auto egl_extentions_str = eglQueryString(m_egl_display, EGL_EXTENSIONS);
-    if (!egl_extentions_str) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
-        return false;
-    }
-    const auto egl_extensions = QByteArray::fromRawData(egl_extentions_str,
-                                                        qstrlen(egl_extentions_str));
-
-    if (!egl_extensions.contains("EGL_KHR_image_base") &&
-        !egl_extensions.contains("EGL_KHR_image")) {
+    const EGLExtensions egl_extensions(m_egl_display);
+    if (!egl_extensions.is_supported("EGL_KHR_image_base") &&
+        !egl_extensions.is_supported("EGL_KHR_image")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported...");
         return false;
     }
 
-    if (!egl_extensions.contains("EGL_EXT_image_dma_buf_import")) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: DMABUF unsupported...");
+    if (!m_frontend->initializeEGL(m_egl_display, egl_extensions)) {
         return false;
     }
-
-    // XXX: TODO: check all extentions
-    m_has_dmabuf_import = egl_extensions.contains("EGL_EXT_image_dma_buf_import_modifiers");
-
-
 
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -273,8 +284,8 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     SDL_GL_SwapWindow(params->window);
 
-    glGenTextures(2, m_textures);
-    for (size_t i = 0; i < 2; ++i) {
+    glGenTextures(EGL_MAX_PLANES, m_textures);
+    for (size_t i = 0; i < EGL_MAX_PLANES; ++i) {
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
         glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -296,9 +307,78 @@ void EGLRenderer::renderOverlay([[maybe_unused]] Overlay::OverlayType type)
     // TODO: FIXME
 }
 
+bool EGLRenderer::specialize() {
+    if (!compileShader())
+        return false;
+    if (m_vao)
+        glDeleteVertexArrays(1, &m_vao);
+
+    // XXX: Maybe we should keep the window ratio for the vertices
+    static const float vertices[] = {
+        // pos .... // tex coords
+        1.0f, 1.0f, 1.0f, 0.0f,
+        1.0f, -1.0f, 1.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 1.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+
+    };
+    static const unsigned int indices[] = {
+        0, 1, 3,
+        1, 2, 3,
+    };
+
+    /* Coef from: https://www.renesas.com/eu/en/www/doc/application-note/an9717.pdf */
+    const float convert_matrix[] = {
+        1.164f, 1.164f, 1.164f,
+        0.0f, -0.392f, 2.017f,
+        1.596f, -0.813f, 0.0f
+    };
+
+    glUseProgram(m_shader_program);
+
+    unsigned int VBO, EBO;
+    glGenVertexArrays(1, &m_vao);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+
+    glBindVertexArray(m_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof (vertices), vertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof (indices), indices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof (float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    int yuvmat_location = glGetUniformLocation(m_shader_program, "yuvmat");
+    glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, convert_matrix);
+
+    int tmp = glGetUniformLocation(m_shader_program, "plane1");
+    glUniform1i(tmp, 0);
+    tmp = glGetUniformLocation(m_shader_program, "plane2");
+    glUniform1i(tmp, 1);
+
+    glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &EBO);
+
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
+        return false;
+    }
+
+    return true;
+}
+
 void EGLRenderer::renderFrame(AVFrame* frame)
 {
-    static unsigned int VAO;
     if (frame->hw_frames_ctx != nullptr) {
         // Find the native read-back format and load the shader
         if (m_SwPixelFormat == AV_PIX_FMT_NONE) {
@@ -312,60 +392,11 @@ void EGLRenderer::renderFrame(AVFrame* frame)
                         m_SwPixelFormat);
             // XXX: TODO: Handle other pixel formats
             SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
-            if (!compileShader())
+
+            if (!specialize()) {
+                m_SwPixelFormat = AV_PIX_FMT_NONE;
                 return;
-
-            // XXX: Maybe we should keep the window ratio for the vertices
-            static const float vertices[] = {
-                // pos .... // tex coords
-                1.0f, 1.0f, 1.0f, 0.0f,
-                1.0f, -1.0f, 1.0f, 1.0f,
-                -1.0f, -1.0f, 0.0f, 1.0f,
-                -1.0f, 1.0f, 0.0f, 0.0f,
-
-            };
-            static const unsigned int indices[] = {
-                0, 1, 3,
-                1, 2, 3,
-            };
-
-            /* Coef from: https://www.renesas.com/eu/en/www/doc/application-note/an9717.pdf */
-            const float convert_matrix[] = {
-                1.164f, 1.164f, 1.164f,
-                0.0f, -0.392f, 2.017f,
-                1.596f, -0.813f, 0.0f
-            };
-
-            glUseProgram(m_shader_program);
-
-            unsigned int VBO, EBO;
-            glGenVertexArrays(1, &VAO);
-            glGenBuffers(1, &VBO);
-            glGenBuffers(1, &EBO);
-
-            glBindVertexArray(VAO);
-
-            glBindBuffer(GL_ARRAY_BUFFER, VBO);
-            glBufferData(GL_ARRAY_BUFFER, sizeof (vertices), vertices, GL_STATIC_DRAW);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof (indices), indices, GL_STATIC_DRAW);
-
-            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof (float)));
-            glEnableVertexAttribArray(1);
-
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-            glBindVertexArray(0);
-
-            int yuvmat_location = glGetUniformLocation(m_shader_program, "yuvmat");
-            glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, convert_matrix);
-
-            int tmp = glGetUniformLocation(m_shader_program, "plane1");
-            glUniform1i(tmp, 0);
-            tmp = glGetUniformLocation(m_shader_program, "plane2");
-            glUniform1i(tmp, 1);
+            }
         }
 
         EGLImage imgs[EGL_MAX_PLANES];
@@ -385,7 +416,8 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             return;
         }
 
-    glBindVertexArray(VAO);
+    glUseProgram(m_shader_program);
+    glBindVertexArray(m_vao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     SDL_GL_SwapWindow(m_window);

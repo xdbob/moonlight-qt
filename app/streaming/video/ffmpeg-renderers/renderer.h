@@ -14,6 +14,16 @@ extern "C" {
 typedef void *EGLDisplay;
 typedef void *EGLImage;
 #define EGL_MAX_PLANES 4
+
+class EGLExtensions {
+public:
+    EGLExtensions(EGLDisplay dpy);
+    ~EGLExtensions() {}
+    bool is_supported(const QString &extension) const;
+private:
+    const QStringList m_extensions;
+};
+
 #endif
 
 #define RENDERER_ATTRIBUTE_FULLSCREEN_ONLY 0x01
@@ -82,10 +92,15 @@ public:
         return false;
     }
 
+    virtual bool initializeEGL([[maybe_unused]] EGLDisplay dpy,
+                               [[maybe_unused]] const EGLExtensions &ext) {
+        return false;
+    }
+
     virtual ssize_t exportEGLImages([[maybe_unused]] AVFrame *frame,
                                     [[maybe_unused]] EGLDisplay dpy,
                                     [[maybe_unused]] EGLImage images[EGL_MAX_PLANES]) {
-        return false;
+        return -1;
     }
 
     // Free the ressources allocated during the last `exportEGLImages` call

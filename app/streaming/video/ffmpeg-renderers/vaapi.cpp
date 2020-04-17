@@ -19,6 +19,7 @@ VAAPIRenderer::VAAPIRenderer()
 #ifdef HAVE_EGL
     m_descriptor.num_layers = 0;
     m_descriptor.num_objects = 0;
+    m_egl_ext_dmabuf = false;
 #endif
 }
 
@@ -375,6 +376,18 @@ VAAPIRenderer::canExportEGL() {
     return true;
 }
 
+bool
+VAAPIRenderer::initializeEGL([[maybe_unused]] EGLDisplay dpy,
+                             const EGLExtensions &ext) {
+    if (!ext.is_supported("EGL_EXT_image_dma_buf_import")) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VAAPI-EGL: DMABUF unsupported...");
+        return false;
+    }
+    m_egl_ext_dmabuf = ext.is_supported("EGL_EXT_image_dma_buf_import_modifiers");
+    return true;
+}
+
 ssize_t
 VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
                                EGLImage images[EGL_MAX_PLANES]) {
@@ -403,28 +416,20 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
         goto sync_fail;
     }
 
-    // Is it needed
-    m_descriptor.width = frame->width;
-    m_descriptor.height = frame->height;
-
     for (size_t i = 0; i < m_descriptor.num_layers; ++i) {
         const auto &layer = m_descriptor.layers[i];
         const auto &object = m_descriptor.objects[layer.object_index[0]];
-        EGLint w = i == 0 ? frame->width : frame->width / 2;
-        EGLint h = i == 0 ? frame->height : frame->height / 2;
 
-        // TODO: how to get has_dmabuf_import ?
-        bool dmabuf_import = false;
         EGLAttrib attribs[17] = {
             EGL_LINUX_DRM_FOURCC_EXT, (EGLint)layer.drm_format,
-            EGL_WIDTH, w,
-            EGL_HEIGHT, h,
+            EGL_WIDTH, i == 0 ? frame->width : frame->width / 2,
+            EGL_HEIGHT, i == 0 ? frame->height : frame->height / 2,
             EGL_DMA_BUF_PLANE0_FD_EXT, object.fd,
             EGL_DMA_BUF_PLANE0_OFFSET_EXT, (EGLint)layer.offset[0],
             EGL_DMA_BUF_PLANE0_PITCH_EXT, (EGLint)layer.pitch[0],
             EGL_NONE,
         };
-        if (dmabuf_import) {
+        if (m_egl_ext_dmabuf) {
             const EGLAttrib extra[] = {
                 EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
                 (EGLint)object.drm_format_modifier,

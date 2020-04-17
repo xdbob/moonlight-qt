@@ -17,16 +17,14 @@ private:
     void renderOverlay(Overlay::OverlayType type);
 
     bool compileShader();
+    bool specialize();
 
     int m_SwPixelFormat;
     void *m_egl_display;
-    bool m_has_dmabuf_import;
-    unsigned m_textures[2];
+    unsigned m_textures[EGL_MAX_PLANES];
     unsigned m_shader_program;
-    unsigned m_vertices_frame;
     SDL_GLContext m_context;
     SDL_Window *m_window;
-    int m_Position_loc;
-    int m_tex_coord_loc;
     IFFmpegRenderer *m_frontend;
+    unsigned int m_vao;
 };

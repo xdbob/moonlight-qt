@@ -44,6 +44,7 @@ public:
     virtual int getDecoderColorspace() override;
 #ifdef HAVE_EGL
     virtual bool canExportEGL() override;
+    virtual bool initializeEGL(EGLDisplay dpy, const EGLExtensions &ext);
     virtual ssize_t exportEGLImages(AVFrame *frame, EGLDisplay dpy, EGLImage images[EGL_MAX_PLANES]) override;
     virtual void freeEGLImages(EGLDisplay dpy) override;
 #endif
@@ -65,5 +66,6 @@ private:
 #ifdef HAVE_EGL
     VADRMPRIMESurfaceDescriptor m_descriptor;
     EGLImage m_last_images[EGL_MAX_PLANES];
+    bool m_egl_ext_dmabuf;
 #endif
 };
