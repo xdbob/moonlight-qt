@@ -6,6 +6,7 @@ out vec4 FragColor;
 in vec2 vTextCoord;
 
 uniform mat3 yuvmat;
+uniform vec3 offset;
 uniform samplerExternalOES plane1;
 uniform samplerExternalOES plane2;
 
@@ -15,7 +16,6 @@ void main() {
 		texture2D(plane2, vTextCoord).xy
 	);
 
-	// TODO: this should be an offset parameter
-	YCbCr -= vec3(0.0627451017, 0.501960814, 0.501960814);
+	YCbCr -= offset;
 	FragColor = vec4(clamp(yuvmat * YCbCr, 0.0, 1.0), 1.0f);
 }

@@ -19,7 +19,6 @@
 
 /* TODO:
  *  - code refacto/cleanup
- *  - handle more pix FMTs
  *  - handle software decoding
  *  - handle window resize
  */
@@ -64,7 +63,9 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
         m_context(0),
         m_window(nullptr),
         m_frontend(frontend_renderer),
-        m_vao(0)
+        m_vao(0),
+        m_colorspace(AVCOL_SPC_NB),
+        m_color_full(false)
 {
     SDL_assert(frontend_renderer);
     SDL_assert(frontend_renderer->canExportEGL());
@@ -307,6 +308,63 @@ void EGLRenderer::renderOverlay([[maybe_unused]] Overlay::OverlayType type)
     // TODO: FIXME
 }
 
+const float *EGLRenderer::getColorMatrix() {
+    /* The conversion matrices are shamelessly stolen from linux:
+     * drivers/media/platform/imx-pxp.c:pxp_setup_csc
+     */
+    static const float bt601_lim[] = {
+        1.1644f, 1.1644f, 1.1644f,
+        0.0f, -0.3917f, 2.0172f,
+        1.5960f, -0.8129f, 0.0f
+    };
+    static const float bt601_full[] = {
+        1.0f, 1.0f, 1.0f,
+        0.0f, -0.3441f, 1.7720f,
+        1.4020f, -0.7141f, 0.0f
+    };
+    static const float bt709_lim[] = {
+        1.1644f, 1.1644f, 1.1644f,
+        0.0f, -0.2132f, 2.1124f,
+        1.7927f, -0.5329f, 0.0f
+    };
+    static const float bt709_full[] = {
+        1.0f, 1.0f, 1.0f,
+        0.0f, -0.1873f, 1.8556f,
+        1.5748f, -0.4681f, 0.0f
+    };
+    static const float bt2020_lim[] = {
+        1.1644f, 1.1644f, 1.1644f,
+        0.0f, -0.1874f, 2.1418f,
+        1.6781f, -0.6505f, 0.0f
+    };
+    static const float bt2020_full[] = {
+        1.0f, 1.0f, 1.0f,
+        0.0f, -0.1646f, 1.8814f,
+        1.4746f, -0.5714f, 0.0f
+    };
+
+    switch (m_colorspace) {
+        case AVCOL_SPC_SMPTE170M:
+        case AVCOL_SPC_BT470BG:
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "EGLRenderer: BT-601 pixels");
+            return m_color_full ? bt601_full : bt601_lim;
+        case AVCOL_SPC_BT709:
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "EGLRenderer: BT-709 pixels");
+            return m_color_full ? bt709_full : bt709_lim;
+        case AVCOL_SPC_BT2020_NCL:
+        case AVCOL_SPC_BT2020_CL:
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "EGLRenderer: BT-2020 pixels");
+            return m_color_full ? bt2020_full : bt2020_lim;
+    };
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "EGLRenderer: unknown color space: %d, falling back to BT-601",
+                m_colorspace);
+    return bt601_lim;
+}
+
 bool EGLRenderer::specialize() {
     if (!compileShader())
         return false;
@@ -325,13 +383,6 @@ bool EGLRenderer::specialize() {
     static const unsigned int indices[] = {
         0, 1, 3,
         1, 2, 3,
-    };
-
-    /* Coef from: https://www.renesas.com/eu/en/www/doc/application-note/an9717.pdf */
-    const float convert_matrix[] = {
-        1.164f, 1.164f, 1.164f,
-        0.0f, -0.392f, 2.017f,
-        1.596f, -0.813f, 0.0f
     };
 
     glUseProgram(m_shader_program);
@@ -358,7 +409,13 @@ bool EGLRenderer::specialize() {
     glBindVertexArray(0);
 
     int yuvmat_location = glGetUniformLocation(m_shader_program, "yuvmat");
-    glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, convert_matrix);
+    glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, getColorMatrix());
+
+    static const float limited_offsets[] = { 16.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f };
+    static const float full_offsets[] = { 0.0f, 128.0f / 255.0f, 128.0f / 255.0f };
+
+    int off_location = glGetUniformLocation(m_shader_program, "offset");
+    glUniform3fv(off_location, 1, m_color_full ? full_offsets : limited_offsets);
 
     int tmp = glGetUniformLocation(m_shader_program, "plane1");
     glUniform1i(tmp, 0);
@@ -392,6 +449,8 @@ void EGLRenderer::renderFrame(AVFrame* frame)
                         m_SwPixelFormat);
             // XXX: TODO: Handle other pixel formats
             SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
+            m_colorspace = frame->colorspace;
+            m_color_full = frame->color_range == AVCOL_RANGE_JPEG;
 
             if (!specialize()) {
                 m_SwPixelFormat = AV_PIX_FMT_NONE;

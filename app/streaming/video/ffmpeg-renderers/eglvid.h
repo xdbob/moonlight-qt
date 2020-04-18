@@ -12,12 +12,16 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool isRenderThreadSupported() override;
     virtual bool isPixelFormatSupported(int videoFormat, enum AVPixelFormat pixelFormat) override;
+    virtual int getDecoderColorspace() override {
+	    return COLORSPACE_REC_601;
+    }
 
 private:
     void renderOverlay(Overlay::OverlayType type);
 
     bool compileShader();
     bool specialize();
+    const float *getColorMatrix();
 
     int m_SwPixelFormat;
     void *m_egl_display;
@@ -27,4 +31,6 @@ private:
     SDL_Window *m_window;
     IFFmpegRenderer *m_frontend;
     unsigned int m_vao;
+    int m_colorspace;
+    bool m_color_full;
 };
