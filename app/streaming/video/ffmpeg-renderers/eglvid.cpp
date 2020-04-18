@@ -18,6 +18,7 @@
 #include <SDL_opengles2_gl2ext.h>
 
 /* TODO:
+ *  - handle more pixel formats
  *  - code refacto/cleanup
  *  - handle software decoding
  *  - handle window resize
@@ -117,25 +118,16 @@ bool EGLRenderer::isPixelFormatSupported(int, AVPixelFormat pixelFormat)
 }
 
 static GLuint load_and_build_shader(GLenum shader_type,
-                    const char *file,
-                    const QVector<QByteArray>& extra_code) {
+                    const char *file) {
     GLuint shader = glCreateShader(shader_type);
     if (!shader || shader == GL_INVALID_ENUM)
         return 0;
 
     auto source_data = Path::readDataFile(file);
-    QVector<const char *> data;
-    data.reserve(extra_code.count() + 1);
-    QVector<GLint> data_size;
-    data_size.reserve(extra_code.count() + 1);
-    for (const auto& a : extra_code) {
-        data.append(a.data());
-        data_size.append(a.size());
-    }
-    data.append(source_data);
-    data_size.append(source_data.size());
+    GLint len = source_data.size();
+    const char *buf = source_data.data();
 
-    glShaderSource(shader, data.count(), data.data(), data_size.data());
+    glShaderSource(shader, 1, &buf, &len);
     glCompileShader(shader);
     GLint status;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
@@ -163,16 +155,11 @@ bool EGLRenderer::compileShader() {
 
     bool ret = false;
 
-    QVector<QByteArray> shader_args;
-    GLuint vertex_shader = load_and_build_shader(GL_VERTEX_SHADER,
-                             "nv12.vert",
-                             shader_args);
+    GLuint vertex_shader = load_and_build_shader(GL_VERTEX_SHADER, "egl.vert");
     if (!vertex_shader)
         return false;
 
-    GLuint fragment_shader = load_and_build_shader(GL_FRAGMENT_SHADER,
-                               "nv12.frag",
-                               shader_args);
+    GLuint fragment_shader = load_and_build_shader(GL_FRAGMENT_SHADER, "egl.frag");
     if (!fragment_shader)
         goto frag_error;
 
