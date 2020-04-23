@@ -74,14 +74,7 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
 
 EGLRenderer::~EGLRenderer()
 {
-    if (m_context) {
-        if (m_shader_program)
-            glDeleteProgram(m_shader_program);
-        if (m_vao)
-            glDeleteVertexArrays(1, &m_vao);
-        glDeleteTextures(EGL_MAX_PLANES, m_textures);
-        SDL_GL_DeleteContext(m_context);
-    }
+    deinitialize();
 }
 
 bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
@@ -242,20 +235,16 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    // TODO: check version
-    if (!eglInitialize(m_egl_display, nullptr, nullptr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot initialize EGL");
-        return false;
-    }
-
     const EGLExtensions egl_extensions(m_egl_display);
     if (!egl_extensions.is_supported("EGL_KHR_image_base") &&
         !egl_extensions.is_supported("EGL_KHR_image")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported...");
+        deinitialize();
         return false;
     }
 
     if (!m_frontend->initializeEGL(m_egl_display, egl_extensions)) {
+        deinitialize();
         return false;
     }
 
@@ -284,10 +273,29 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
-        return false;
+        deinitialize();
     }
 
-    return true;
+    return err == GL_NO_ERROR;
+}
+
+void EGLRenderer::deinitialize() {
+    if (m_context) {
+        if (m_shader_program) {
+            glDeleteProgram(m_shader_program);
+            m_shader_program = 0;
+        }
+        if (m_vao) {
+            glDeleteVertexArrays(1, &m_vao);
+            m_vao = 0;
+        }
+        if (m_egl_display) {
+            // EGL context should be handled by SDL
+            m_egl_display = nullptr;
+        }
+        SDL_GL_DeleteContext(m_context);
+        m_context = nullptr;
+    }
 }
 
 void EGLRenderer::renderOverlay([[maybe_unused]] Overlay::OverlayType type)

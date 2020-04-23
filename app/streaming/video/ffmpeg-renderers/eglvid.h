@@ -22,6 +22,7 @@ private:
     bool compileShader();
     bool specialize();
     const float *getColorMatrix();
+    void deinitialize();
 
     int m_SwPixelFormat;
     void *m_egl_display;
