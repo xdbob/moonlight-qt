@@ -66,7 +66,8 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
         m_frontend(frontend_renderer),
         m_vao(0),
         m_colorspace(AVCOL_SPC_NB),
-        m_color_full(false)
+        m_color_full(false),
+        EGLImageTargetTexture2DOES(nullptr)
 {
     SDL_assert(frontend_renderer);
     SDL_assert(frontend_renderer->canExportEGL());
@@ -244,6 +245,13 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     if (!m_frontend->initializeEGL(m_egl_display, egl_extensions)) {
+        deinitialize();
+        return false;
+    }
+
+    if (!(EGLImageTargetTexture2DOES = (EGLImageTargetTexture2DOES_t)eglGetProcAddress("glEGLImageTargetTexture2DOES"))) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "EGL: cannot retrieve `EGLImageTargetTexture2DOES` address");
         deinitialize();
         return false;
     }
@@ -454,7 +462,7 @@ void EGLRenderer::renderFrame(AVFrame* frame)
         for (ssize_t i = 0; i < plane_count; ++i) {
             glActiveTexture(GL_TEXTURE0 + i);
             glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
-            glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, imgs[i]);
+            EGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, imgs[i]);
         }
     } else {
         // TODO: load texture for SW decoding ?

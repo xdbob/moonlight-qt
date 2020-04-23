@@ -14,6 +14,8 @@ public:
     virtual bool isPixelFormatSupported(int videoFormat, enum AVPixelFormat pixelFormat) override;
 
 private:
+    using EGLImageTargetTexture2DOES_t = void (*)(int, void *);
+
     bool compileShader();
     bool specialize();
     const float *getColorMatrix();
@@ -29,4 +31,5 @@ private:
     unsigned int m_vao;
     int m_colorspace;
     bool m_color_full;
+    EGLImageTargetTexture2DOES_t EGLImageTargetTexture2DOES;
 };
