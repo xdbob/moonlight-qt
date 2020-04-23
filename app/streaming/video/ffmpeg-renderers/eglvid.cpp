@@ -88,7 +88,7 @@ bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
     return true;
 }
 
-void EGLRenderer::notifyOverlayUpdated([[maybe_unused]] Overlay::OverlayType type)
+void EGLRenderer::notifyOverlayUpdated(Overlay::OverlayType)
 {
     // TODO: FIXME
 }

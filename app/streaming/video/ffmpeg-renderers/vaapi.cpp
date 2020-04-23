@@ -377,7 +377,7 @@ VAAPIRenderer::canExportEGL() {
 }
 
 bool
-VAAPIRenderer::initializeEGL([[maybe_unused]] EGLDisplay dpy,
+VAAPIRenderer::initializeEGL(EGLDisplay,
                              const EGLExtensions &ext) {
     if (!ext.is_supported("EGL_EXT_image_dma_buf_import")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,

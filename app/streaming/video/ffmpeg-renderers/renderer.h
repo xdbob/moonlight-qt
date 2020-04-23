@@ -92,18 +92,18 @@ public:
         return false;
     }
 
-    virtual bool initializeEGL([[maybe_unused]] EGLDisplay dpy,
-                               [[maybe_unused]] const EGLExtensions &ext) {
+    virtual bool initializeEGL(EGLDisplay,
+                               const EGLExtensions &) {
         return false;
     }
 
-    virtual ssize_t exportEGLImages([[maybe_unused]] AVFrame *frame,
-                                    [[maybe_unused]] EGLDisplay dpy,
-                                    [[maybe_unused]] EGLImage images[EGL_MAX_PLANES]) {
+    virtual ssize_t exportEGLImages(AVFrame *,
+                                    EGLDisplay,
+                                    EGLImage[EGL_MAX_PLANES]) {
         return -1;
     }
 
     // Free the ressources allocated during the last `exportEGLImages` call
-    virtual void freeEGLImages([[maybe_unused]] EGLDisplay dpy) {}
+    virtual void freeEGLImages(EGLDisplay) {}
 #endif
 };
