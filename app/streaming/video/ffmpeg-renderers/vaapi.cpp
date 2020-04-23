@@ -452,15 +452,9 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
     return count;
 
 create_image_fail:
-    for (ssize_t i = 0; i < count; ++i) {
-        eglDestroyImage(dpy, m_last_images[i]);
-    }
+    m_descriptor.num_layers = count;
 sync_fail:
-    for (size_t i = 0; i < m_descriptor.num_objects; ++i) {
-        close(m_descriptor.objects[i].fd);
-    }
-    m_descriptor.num_objects = 0;
-    m_descriptor.num_layers = 0;
+    freeEGLImages(dpy);
     return -1;
 }
 
