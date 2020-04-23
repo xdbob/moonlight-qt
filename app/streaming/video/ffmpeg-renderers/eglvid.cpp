@@ -407,10 +407,10 @@ bool EGLRenderer::specialize() {
     int off_location = glGetUniformLocation(m_shader_program, "offset");
     glUniform3fv(off_location, 1, m_color_full ? full_offsets : limited_offsets);
 
-    int tmp = glGetUniformLocation(m_shader_program, "plane1");
-    glUniform1i(tmp, 0);
-    tmp = glGetUniformLocation(m_shader_program, "plane2");
-    glUniform1i(tmp, 1);
+    int color_plane = glGetUniformLocation(m_shader_program, "plane1");
+    glUniform1i(color_plane, 0);
+    color_plane = glGetUniformLocation(m_shader_program, "plane2");
+    glUniform1i(color_plane, 1);
 
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
@@ -418,10 +418,9 @@ bool EGLRenderer::specialize() {
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
-        return false;
     }
 
-    return true;
+    return err == GL_NO_ERROR;
 }
 
 void EGLRenderer::renderFrame(AVFrame* frame)
@@ -457,13 +456,12 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
             glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, imgs[i]);
         }
-
-        } else {
-            // TODO: load texture for SW decoding ?
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+    } else {
+        // TODO: load texture for SW decoding ?
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "EGL rendering only supports hw frames");
-            return;
-        }
+        return;
+    }
 
     glUseProgram(m_shader_program);
     glBindVertexArray(m_vao);
