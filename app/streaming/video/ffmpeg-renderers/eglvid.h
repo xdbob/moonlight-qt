@@ -12,13 +12,8 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool isRenderThreadSupported() override;
     virtual bool isPixelFormatSupported(int videoFormat, enum AVPixelFormat pixelFormat) override;
-    virtual int getDecoderColorspace() override {
-	    return COLORSPACE_REC_601;
-    }
 
 private:
-    void renderOverlay(Overlay::OverlayType type);
-
     bool compileShader();
     bool specialize();
     const float *getColorMatrix();

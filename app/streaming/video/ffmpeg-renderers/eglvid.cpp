@@ -298,11 +298,6 @@ void EGLRenderer::deinitialize() {
     }
 }
 
-void EGLRenderer::renderOverlay([[maybe_unused]] Overlay::OverlayType type)
-{
-    // TODO: FIXME
-}
-
 const float *EGLRenderer::getColorMatrix() {
     /* The conversion matrices are shamelessly stolen from linux:
      * drivers/media/platform/imx-pxp.c:pxp_setup_csc
