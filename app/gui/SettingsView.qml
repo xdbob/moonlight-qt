@@ -579,19 +579,21 @@ Flickable {
                 }
 
                 CheckBox {
-                    id: rawInputCheck
+                    id: absoluteMouseCheck
                     hoverEnabled: true
-                    text: "Raw mouse input"
+                    text: "Optimize mouse for remote desktop instead of games"
                     font.pointSize:  12
-                    checked: !StreamingPreferences.mouseAcceleration
+                    enabled: SystemProperties.hasWindowManager
+                    checked: StreamingPreferences.absoluteMouseMode && SystemProperties.hasWindowManager
                     onCheckedChanged: {
-                        StreamingPreferences.mouseAcceleration = !checked
+                        StreamingPreferences.absoluteMouseMode = checked
                     }
 
                     ToolTip.delay: 1000
-                    ToolTip.timeout: 3000
+                    ToolTip.timeout: 5000
                     ToolTip.visible: hovered
-                    ToolTip.text: "When checked, mouse input is not accelerated or scaled by the OS before passing to Moonlight"
+                    ToolTip.text: "This enables mouse control without capturing the client's mouse cursor. It will not work in most games.\n
+                                   You can toggle this while streaming using Ctrl+Alt+Shift+M."
                 }
 
                 CheckBox {

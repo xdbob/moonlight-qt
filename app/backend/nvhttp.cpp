@@ -163,10 +163,7 @@ NvHTTP::launchApp(int appId,
                                    "appid="+QString::number(appId)+
                                    "&mode="+QString::number(streamConfig->width)+"x"+
                                    QString::number(streamConfig->height)+"x"+
-                                   // Using an FPS value over 60 causes SOPS to default to 720p60,
-                                   // so force it to 60 when starting. This won't impact our ability
-                                   // to get > 60 FPS while actually streaming though.
-                                   QString::number(streamConfig->fps > 60 ? 60 : streamConfig->fps)+
+                                   QString::number(streamConfig->fps)+
                                    "&additionalStates=1&sops="+QString::number(sops ? 1 : 0)+
                                    "&rikey="+QByteArray(streamConfig->remoteInputAesKey, sizeof(streamConfig->remoteInputAesKey)).toHex()+
                                    "&rikeyid="+QString::number(riKeyId)+
@@ -284,6 +281,9 @@ NvHTTP::getAppList()
             else if (name == "IsHdrSupported") {
                 apps.last().hdrSupported = xmlReader.readElementText() == "1";
             }
+            else if (name == "IsAppCollectorGame") {
+                apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
+            }
         }
     }
 
@@ -299,7 +299,10 @@ NvHTTP::verifyResponseStatus(QString xml)
     {
         if (xmlReader.name() == "root")
         {
-            int statusCode = xmlReader.attributes().value("status_code").toInt();
+            // Status code can be 0xFFFFFFFF in some rare cases on GFE 3.20.3, and
+            // QString::toInt() will fail in that case, so use QString::toUInt()
+            // and cast the result to an int instead.
+            int statusCode = (int)xmlReader.attributes().value("status_code").toUInt();
             if (statusCode == 200)
             {
                 // Successful
@@ -311,6 +314,12 @@ NvHTTP::verifyResponseStatus(QString xml)
                 if (statusCode != 401) {
                     // 401 is expected for unpaired PCs when we fetch serverinfo over HTTPS
                     qWarning() << "Request failed:" << statusCode << statusMessage;
+                }
+                if (statusCode == -1 && statusMessage == "Invalid") {
+                    // Special case handling an audio capture error which GFE doesn't
+                    // provide any useful status message for.
+                    statusCode = 418;
+                    statusMessage = "Missing audio capture device. Reinstalling GeForce Experience should resolve this error.";
                 }
                 throw GfeHttpResponseException(statusCode, statusMessage);
             }

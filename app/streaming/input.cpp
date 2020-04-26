@@ -3,6 +3,7 @@
 #include "streaming/session.h"
 #include "settings/mappingmanager.h"
 #include "path.h"
+#include "streamutils.h"
 
 #include <QtGlobal>
 #include <QtMath>
@@ -21,14 +22,17 @@
 
 #define MOUSE_POLLING_INTERVAL 5
 
-// How long the mouse button will be pressed for a tap to click gesture
-#define TAP_BUTTON_RELEASE_DELAY 100
+// How long the fingers must be stationary to start a right click
+#define LONG_PRESS_ACTIVATION_DELAY 650
 
-// How long the fingers must be stationary to start a drag
-#define DRAG_ACTIVATION_DELAY 650
+// How far the finger can move before it cancels a right click
+#define LONG_PRESS_ACTIVATION_DELTA 0.01f
 
-// How far the finger can move before it cancels a drag or tap
-#define DEAD_ZONE_DELTA 0.1f
+// How long the double tap deadzone stays in effect between touch up and touch down
+#define DOUBLE_TAP_DEAD_ZONE_DELAY 250
+
+// How far the finger can move before it can override the double tap deadzone
+#define DOUBLE_TAP_DEAD_ZONE_DELTA 0.025f
 
 // How long the Start button must be pressed to toggle mouse emulation
 #define MOUSE_EMULATION_LONG_PRESS_TIME 750
@@ -59,23 +63,20 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, NvComputer*, int s
       m_GamepadMouse(prefs.gamepadMouse),
       m_MouseMoveTimer(0),
       m_FakeCaptureActive(false),
-      m_LeftButtonReleaseTimer(0),
-      m_RightButtonReleaseTimer(0),
-      m_DragTimer(0),
-      m_DragButton(0),
-      m_NumFingersDown(0),
+      m_LongPressTimer(0),
       m_StreamWidth(streamWidth),
-      m_StreamHeight(streamHeight)
+      m_StreamHeight(streamHeight),
+      m_AbsoluteMouseMode(prefs.absoluteMouseMode)
 {
     // Allow gamepad input when the app doesn't have focus
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
-    // If mouse acceleration is enabled, use relative mode warp (which
+    // If absolute mouse mode is enabled, use relative mode warp (which
     // is via normal motion events that are influenced by mouse acceleration).
     // Otherwise, we'll use raw input capture which is straight from the device
     // without modification by the OS.
     SDL_SetHintWithPriority(SDL_HINT_MOUSE_RELATIVE_MODE_WARP,
-                            prefs.mouseAcceleration ? "1" : "0",
+                            prefs.absoluteMouseMode ? "1" : "0",
                             SDL_HINT_OVERRIDE);
 
 #if defined(Q_OS_DARWIN) && !SDL_VERSION_ATLEAST(2, 0, 10)
@@ -140,8 +141,8 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, NvComputer*, int s
     m_GamepadMask = getAttachedGamepadMask();
 
     SDL_zero(m_GamepadState);
-    SDL_zero(m_TouchDownEvent);
-    SDL_zero(m_CumulativeDelta);
+    SDL_zero(m_LastTouchDownEvent);
+    SDL_zero(m_LastTouchUpEvent);
 
     SDL_AtomicSet(&m_MouseDeltaX, 0);
     SDL_AtomicSet(&m_MouseDeltaY, 0);
@@ -177,9 +178,7 @@ SdlInputHandler::~SdlInputHandler()
     }
 
     SDL_RemoveTimer(m_MouseMoveTimer);
-    SDL_RemoveTimer(m_LeftButtonReleaseTimer);
-    SDL_RemoveTimer(m_RightButtonReleaseTimer);
-    SDL_RemoveTimer(m_DragTimer);
+    SDL_RemoveTimer(m_LongPressTimer);
 
 #if !SDL_VERSION_ATLEAST(2, 0, 9)
     SDL_QuitSubSystem(SDL_INIT_HAPTIC);
@@ -250,6 +249,21 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
             raiseAllKeys();
             return;
         }
+        // Check for the mouse mode combo (Ctrl+Alt+Shift+M) unless on EGLFS which has no window manager
+        else if (event->keysym.sym == SDLK_m && QGuiApplication::platformName() != "eglfs") {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Detected mouse mode toggle combo (SDLK)");
+
+            // Uncapture input
+            setCaptureActive(false);
+
+            // Toggle mouse mode
+            m_AbsoluteMouseMode = !m_AbsoluteMouseMode;
+
+            // Recapture input
+            setCaptureActive(true);
+            return;
+        }
         else if (event->keysym.sym == SDLK_x && QGuiApplication::platformName() != "eglfs") {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Detected full-screen toggle combo (SDLK)");
@@ -310,6 +324,21 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
             raiseAllKeys();
             return;
         }
+        // Check for the mouse mode toggle combo (Ctrl+Alt+Shift+M) unless on EGLFS which has no window manager
+        else if (event->keysym.scancode == SDL_SCANCODE_M && QGuiApplication::platformName() != "eglfs") {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Detected mouse mode toggle combo (scancode)");
+
+            // Uncapture input
+            setCaptureActive(false);
+
+            // Toggle mouse mode
+            m_AbsoluteMouseMode = !m_AbsoluteMouseMode;
+
+            // Recapture input
+            setCaptureActive(true);
+            return;
+        }
         else if (event->keysym.scancode == SDL_SCANCODE_S) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Detected stats toggle combo (scancode)");
@@ -323,11 +352,6 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
             raiseAllKeys();
             return;
         }
-    }
-
-    if (!isCaptureActive()) {
-        // Not capturing
-        return;
     }
 
     if (event->repeat) {
@@ -583,23 +607,21 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
 {
     int button;
 
-    // Capture the mouse again if clicked when unbound.
-    // We start capture on left button released instead of
-    // pressed to avoid sending an errant mouse button released
-    // event to the host when clicking into our window (since
-    // the pressed event was consumed by this code).
-    if (event->button == SDL_BUTTON_LEFT &&
-            event->state == SDL_RELEASED &&
-            !isCaptureActive()) {
-        setCaptureActive(true);
+    if (event->which == SDL_TOUCH_MOUSEID) {
+        // Ignore synthetic mouse events
         return;
     }
     else if (!isCaptureActive()) {
+        if (event->button == SDL_BUTTON_LEFT && event->state == SDL_RELEASED) {
+            // Capture the mouse again if clicked when unbound.
+            // We start capture on left button released instead of
+            // pressed to avoid sending an errant mouse button released
+            // event to the host when clicking into our window (since
+            // the pressed event was consumed by this code).
+            setCaptureActive(true);
+        }
+
         // Not capturing
-        return;
-    }
-    else if (event->which == SDL_TOUCH_MOUSEID) {
-        // Ignore synthetic mouse events
         return;
     }
 
@@ -633,7 +655,7 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
                            button);
 }
 
-void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
+void SdlInputHandler::handleMouseMotionEvent(SDL_Window* window, SDL_MouseMotionEvent* event)
 {
     if (!isCaptureActive()) {
         // Not capturing
@@ -644,10 +666,32 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
         return;
     }
 
-    // Batch until the next mouse polling window or we'll get awful
-    // input lag everything except GFE 3.14 and 3.15.
-    SDL_AtomicAdd(&m_MouseDeltaX, event->xrel);
-    SDL_AtomicAdd(&m_MouseDeltaY, event->yrel);
+    if (m_AbsoluteMouseMode) {
+        SDL_Rect src, dst;
+
+        src.x = src.y = 0;
+        src.w = m_StreamWidth;
+        src.h = m_StreamHeight;
+
+        dst.x = dst.y = 0;
+        SDL_GetWindowSize(window, &dst.w, &dst.h);
+
+        // Use the stream and window sizes to determine the video region
+        StreamUtils::scaleSourceToDestinationSurface(&src, &dst);
+
+        // Clamp motion to the video region
+        short x = qMin(qMax(event->x - dst.x, 0), dst.w);
+        short y = qMin(qMax(event->y - dst.y, 0), dst.h);
+
+        // Send the mouse position update
+        LiSendMousePositionEvent(x, y, dst.w, dst.h);
+    }
+    else {
+        // Batch until the next mouse polling window or we'll get awful
+        // input lag everything except GFE 3.14 and 3.15.
+        SDL_AtomicAdd(&m_MouseDeltaX, event->xrel);
+        SDL_AtomicAdd(&m_MouseDeltaY, event->yrel);
+    }
 }
 
 void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
@@ -697,32 +741,11 @@ void SdlInputHandler::sendGamepadState(GamepadState* state)
                                state->rsY);
 }
 
-Uint32 SdlInputHandler::releaseLeftButtonTimerCallback(Uint32, void*)
+Uint32 SdlInputHandler::longPressTimerCallback(Uint32, void*)
 {
+    // Raise the left click and start a right click
     LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
-    return 0;
-}
-
-Uint32 SdlInputHandler::releaseRightButtonTimerCallback(Uint32, void*)
-{
-    LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
-    return 0;
-}
-
-Uint32 SdlInputHandler::dragTimerCallback(Uint32, void *param)
-{
-    auto me = reinterpret_cast<SdlInputHandler*>(param);
-
-    // Check how many fingers are down now to decide
-    // which button to hold down
-    if (me->m_NumFingersDown == 2) {
-        me->m_DragButton = BUTTON_RIGHT;
-    }
-    else if (me->m_NumFingersDown == 1) {
-        me->m_DragButton = BUTTON_LEFT;
-    }
-
-    LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, me->m_DragButton);
+    LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
 
     return 0;
 }
@@ -1196,10 +1219,8 @@ void SdlInputHandler::rumble(unsigned short controllerNumber, unsigned short low
 #endif
 }
 
-void SdlInputHandler::handleTouchFingerEvent(SDL_TouchFingerEvent* event)
+void SdlInputHandler::handleTouchFingerEvent(SDL_Window* window, SDL_TouchFingerEvent* event)
 {
-    int fingerIndex = -1;
-
 #if SDL_VERSION_ATLEAST(2, 0, 10)
     if (SDL_GetTouchDeviceType(event->touchId) != SDL_TOUCH_DEVICE_DIRECT) {
         // Ignore anything that isn't a touchscreen. We may get callbacks
@@ -1221,128 +1242,74 @@ void SdlInputHandler::handleTouchFingerEvent(SDL_TouchFingerEvent* event)
     // leave the client area during a drag motion.
     // dx and dy are deltas from the last touch event, not the first touch down.
 
-    // Determine the index of this finger using our list
-    // of fingers that are currently active on screen.
-    // This is also required to handle finger up which
-    // where the finger will not be in SDL_GetTouchFinger()
-    // anymore.
-    if (event->type != SDL_FINGERDOWN) {
-        for (int i = 0; i < MAX_FINGERS; i++) {
-            if (event->fingerId == m_TouchDownEvent[i].fingerId) {
-                fingerIndex = i;
-                break;
-            }
-        }
-    }
-    else {
-        // Resolve the new finger by determining the ID of each
-        // finger on the display.
-        int numTouchFingers = SDL_GetNumTouchFingers(event->touchId);
-        for (int i = 0; i < numTouchFingers; i++) {
-            SDL_Finger* finger = SDL_GetTouchFinger(event->touchId, i);
-            SDL_assert(finger != nullptr);
-            if (finger != nullptr) {
-                if (finger->id == event->fingerId) {
-                    fingerIndex = i;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (fingerIndex < 0 || fingerIndex >= MAX_FINGERS) {
-        // Too many fingers
+    // Ignore touch down events with more than one finger
+    if (event->type == SDL_FINGERDOWN && SDL_GetNumTouchFingers(event->touchId) > 1) {
         return;
     }
 
-    // Handle cursor motion based on the position of the
-    // primary finger on screen
-    if (fingerIndex == 0) {
-        // The event x and y values are relative to our window width
-        // and height. However, we want to scale them to be relative
-        // to the host resolution. Fortunately this is easy since we
-        // already have normalized values. We'll just multiply them
-        // by the stream dimensions to get real X and Y values rather
-        // than the client window dimensions.
-        short deltaX = static_cast<short>(event->dx * m_StreamWidth);
-        short deltaY = static_cast<short>(event->dy * m_StreamHeight);
-        if (deltaX != 0 || deltaY != 0) {
-            LiSendMouseMoveEvent(deltaX, deltaY);
-        }
+    // Ignore touch move and touch up events from the non-primary finger
+    if (event->type != SDL_FINGERDOWN && event->fingerId != m_LastTouchDownEvent.fingerId) {
+        return;
     }
 
-    // Start a drag timer when primary or secondary
-    // fingers go down
-    if (event->type == SDL_FINGERDOWN &&
-            (fingerIndex == 0 || fingerIndex == 1)) {
-        SDL_RemoveTimer(m_DragTimer);
-        m_DragTimer = SDL_AddTimer(DRAG_ACTIVATION_DELAY,
-                                   dragTimerCallback,
-                                   this);
+    SDL_Rect src, dst;
+    int windowWidth, windowHeight;
+
+    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+
+    src.x = src.y = 0;
+    src.w = m_StreamWidth;
+    src.h = m_StreamHeight;
+
+    dst.x = dst.y = 0;
+    dst.w = windowWidth;
+    dst.h = windowHeight;
+
+    // Use the stream and window sizes to determine the video region
+    StreamUtils::scaleSourceToDestinationSurface(&src, &dst);
+
+    if (qSqrt(qPow(event->x - m_LastTouchDownEvent.x, 2) + qPow(event->y - m_LastTouchDownEvent.y, 2)) > LONG_PRESS_ACTIVATION_DELTA) {
+        // Moved too far since touch down. Cancel the long press timer.
+        SDL_RemoveTimer(m_LongPressTimer);
+        m_LongPressTimer = 0;
     }
 
-    if (event->type == SDL_FINGERMOTION) {
-        // Count the total cumulative dx/dy that the finger
-        // has moved.
-        m_CumulativeDelta[fingerIndex] += qAbs(event->x);
-        m_CumulativeDelta[fingerIndex] += qAbs(event->y);
+    // Don't reposition for finger down events within the deadzone. This makes double-clicking easier.
+    if (event->type != SDL_FINGERDOWN ||
+            event->timestamp - m_LastTouchUpEvent.timestamp > DOUBLE_TAP_DEAD_ZONE_DELAY ||
+            qSqrt(qPow(event->x - m_LastTouchUpEvent.x, 2) + qPow(event->y - m_LastTouchUpEvent.y, 2)) > DOUBLE_TAP_DEAD_ZONE_DELTA) {
+        // Scale window-relative events to be video-relative and clamp to video region
+        short x = qMin(qMax((int)(event->x * windowWidth), dst.x), dst.x + dst.w);
+        short y = qMin(qMax((int)(event->y * windowHeight), dst.y), dst.y + dst.h);
 
-        // If it's outside the deadzone delta, cancel drags and taps
-        if (m_CumulativeDelta[fingerIndex] > DEAD_ZONE_DELTA) {
-            SDL_RemoveTimer(m_DragTimer);
-            m_DragTimer = 0;
-
-            // This effectively cancels the tap logic below
-            m_TouchDownEvent[fingerIndex].timestamp = 0;
-        }
+        // Update the cursor position relative to the video region
+        LiSendMousePositionEvent(x - dst.x, y - dst.y, dst.w, dst.h);
     }
 
-    if (event->type == SDL_FINGERUP) {
-        // Cancel the drag timer on finger up
-        SDL_RemoveTimer(m_DragTimer);
-        m_DragTimer = 0;
+    if (event->type == SDL_FINGERDOWN) {
+        m_LastTouchDownEvent = *event;
 
-        // Release any drag
-        if (m_DragButton != 0) {
-            LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, m_DragButton);
-            m_DragButton = 0;
-        }
-        // 2 finger tap
-        else if (event->timestamp - m_TouchDownEvent[1].timestamp < 250) {
-            // Zero timestamp of the primary finger to ensure we won't
-            // generate a left click if the primary finger comes up soon.
-            m_TouchDownEvent[0].timestamp = 0;
+        // Start/restart the long press timer
+        SDL_RemoveTimer(m_LongPressTimer);
+        m_LongPressTimer = SDL_AddTimer(LONG_PRESS_ACTIVATION_DELAY,
+                                        longPressTimerCallback,
+                                        nullptr);
 
-            // Press down the right mouse button
-            LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
-
-            // Queue a timer to release it in 100 ms
-            SDL_RemoveTimer(m_RightButtonReleaseTimer);
-            m_RightButtonReleaseTimer = SDL_AddTimer(TAP_BUTTON_RELEASE_DELAY,
-                                                     releaseRightButtonTimerCallback,
-                                                     nullptr);
-        }
-        // 1 finger tap
-        else if (event->timestamp - m_TouchDownEvent[0].timestamp < 250) {
-            // Press down the left mouse button
-            LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
-
-            // Queue a timer to release it in 100 ms
-            SDL_RemoveTimer(m_LeftButtonReleaseTimer);
-            m_LeftButtonReleaseTimer = SDL_AddTimer(TAP_BUTTON_RELEASE_DELAY,
-                                                    releaseLeftButtonTimerCallback,
-                                                    nullptr);
-        }
-    }
-
-    m_NumFingersDown = SDL_GetNumTouchFingers(event->touchId);
-
-    if (event->type == SDL_FINGERDOWN) {      
-        m_TouchDownEvent[fingerIndex] = *event;
-        m_CumulativeDelta[fingerIndex] = 0;
+        // Left button down on finger down
+        LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
     }
     else if (event->type == SDL_FINGERUP) {
-        m_TouchDownEvent[fingerIndex] = {};
+        m_LastTouchUpEvent = *event;
+
+        // Cancel the long press timer
+        SDL_RemoveTimer(m_LongPressTimer);
+        m_LongPressTimer = 0;
+
+        // Left button up on finger up
+        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+
+        // Raise right button too in case we triggered a long press gesture
+        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
     }
 }
 
@@ -1383,6 +1350,51 @@ void SdlInputHandler::raiseAllKeys()
     m_KeysDown.clear();
 }
 
+void SdlInputHandler::notifyFocusGained(SDL_Window* window)
+{
+    // Capture mouse cursor when user actives the window by clicking on
+    // window's client area (borders and title bar excluded).
+    // Without this you would have to click the window twice (once to
+    // activate it, second time to enable capture). With this you need to
+    // click it only once.
+    //
+    // On Linux, the button press event is delivered after the focus gain
+    // so this is not neccessary (and leads to a click sent to the host
+    // when focusing the window by clicking).
+    //
+    // By excluding window's borders and title bar out, lets user still
+    // interact with them without mouse capture kicking in.
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN)
+    int mouseX, mouseY;
+    Uint32 mouseState = SDL_GetGlobalMouseState(&mouseX, &mouseY);
+    if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
+        int x, y, width, height;
+        SDL_GetWindowPosition(window, &x, &y);
+        SDL_GetWindowSize(window, &width, &height);
+        if (mouseX > x && mouseX < x+width && mouseY > y && mouseY < y+height) {
+            setCaptureActive(true);
+        }
+    }
+#else
+    Q_UNUSED(window);
+#endif
+}
+
+void SdlInputHandler::notifyFocusLost(SDL_Window* window)
+{
+    // Release mouse cursor when another window is activated (e.g. by using ALT+TAB).
+    // This lets user to interact with our window's title bar and with the buttons in it.
+    // Doing this while the window is full-screen breaks the transition out of FS
+    // (desktop and exclusive), so we must check for that before releasing mouse capture.
+    if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) && !m_AbsoluteMouseMode) {
+        setCaptureActive(false);
+    }
+
+    // Raise all keys that are currently pressed. If we don't do this, certain keys
+    // used in shortcuts that cause focus loss (such as Alt+Tab) may get stuck down.
+    raiseAllKeys();
+}
+
 bool SdlInputHandler::isCaptureActive()
 {
     if (SDL_GetRelativeMouseMode()) {
@@ -1396,8 +1408,8 @@ bool SdlInputHandler::isCaptureActive()
 void SdlInputHandler::setCaptureActive(bool active)
 {
     if (active) {
-        // Try to activate SDL's relative mouse mode
-        if (SDL_SetRelativeMouseMode(SDL_TRUE) < 0) {
+        // If we're in relative mode, try to activate SDL's relative mouse mode
+        if (m_AbsoluteMouseMode || SDL_SetRelativeMouseMode(SDL_TRUE) < 0) {
             // Relative mouse mode didn't work, so we'll use fake capture
             SDL_ShowCursor(SDL_DISABLE);
             m_FakeCaptureActive = true;
