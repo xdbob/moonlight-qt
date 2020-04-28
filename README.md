@@ -13,15 +13,19 @@ You can follow development on our [Discord server](https://moonlight-stream.org/
  - Hardware accelerated video decoding on Windows, Mac, and Linux
  - Supports streaming at up to 120 FPS (high refresh rate monitor recommended)
  - Supports streaming at 720p, 1080p, 1440p, 4K, and the client PC's native screen resolution
- - 5.1 surround sound audio
+ - 7.1 surround sound audio support
+ - Support for both pointer capture (for games) and direct mouse control (for remote desktop)
+ - Direct touchscreen mouse control
  - HEVC support for better image quality at reduced bandwidth
- - Keyboard and mouse support
  - Gamepad support with force feedback for up to 4 players
  
 ## Downloads
 - [Windows, macOS, and Steam Link](https://github.com/moonlight-stream/moonlight-qt/releases)
 - [Snap (for Ubuntu-based Linux distros)](https://snapcraft.io/moonlight)
 - [Flatpak (for other Linux distros)](https://flathub.org/apps/details/com.moonlight_stream.Moonlight)
+- [AppImage](https://github.com/moonlight-stream/moonlight-qt/releases)
+- [Raspberry Pi 4](https://github.com/moonlight-stream/moonlight-docs/wiki/Installing-Moonlight-Qt-on-Raspberry-Pi-4)
+- [NVIDIA Jetson and Nintendo Switch (Ubuntu L4T)](https://github.com/moonlight-stream/moonlight-docs/wiki/Installing-Moonlight-Qt-on-Linux4Tegra-(L4T)-Ubuntu)
 
 ## Building
 
