@@ -68,9 +68,19 @@ void Session::clStageFailed(int stage, int errorCode)
 void Session::clConnectionTerminated(int errorCode)
 {
     // Display the termination dialog if this was not intended
-    if (errorCode != 0) {
+    switch (errorCode) {
+    case ML_ERROR_GRACEFUL_TERMINATION:
+        break;
+
+    case ML_ERROR_NO_VIDEO_TRAFFIC:
+        s_ActiveSession->m_UnexpectedTermination = true;
+        emit s_ActiveSession->displayLaunchError("No video received from host. Check the host PC's firewall and port forwarding rules.");
+        break;
+
+    default:
         s_ActiveSession->m_UnexpectedTermination = true;
         emit s_ActiveSession->displayLaunchError("Connection terminated");
+        break;
     }
 
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -890,8 +900,8 @@ void Session::toggleFullscreen()
     bool fullScreen = !(SDL_GetWindowFlags(m_Window) & m_FullScreenFlag);
 
     if (fullScreen) {
-        if (m_FullScreenFlag == SDL_WINDOW_FULLSCREEN) {
-            // Confine the cursor to the window
+        if (m_FullScreenFlag == SDL_WINDOW_FULLSCREEN && m_InputHandler->isCaptureActive()) {
+            // Confine the cursor to the window if we're capturing input
             SDL_SetWindowGrab(m_Window, SDL_TRUE);
         }
 
@@ -1104,6 +1114,8 @@ void Session::exec(int displayOriginX, int displayOriginY)
         return;
     }
 
+    m_InputHandler->setWindow(m_Window);
+
     QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
     QImage svgImage(ICON_SIZE, ICON_SIZE, QImage::Format_RGBA8888);
     svgImage.fill(0);
@@ -1141,11 +1153,6 @@ void Session::exec(int displayOriginX, int displayOriginY)
         SDL_SetWindowResizable(m_Window, SDL_TRUE);
     }
     else {
-        if (m_FullScreenFlag == SDL_WINDOW_FULLSCREEN) {
-            // Confine the cursor to the window
-            SDL_SetWindowGrab(m_Window, SDL_TRUE);
-        }
-
         // Update the window display mode based on our current monitor
         updateOptimalWindowDisplayMode();
 
@@ -1155,32 +1162,24 @@ void Session::exec(int displayOriginX, int displayOriginY)
 
     bool needsFirstEnterCapture = false;
 
-    // Capture the mouse in relative mode by default on release builds only.
-    // This prevents the mouse from becoming trapped inside Moonlight when
-    // it's halted at a debug break.
-#ifdef QT_DEBUG
-    if (prefs.absoluteMouseMode)
-#endif
-    {
-        // HACK: For Wayland, we wait until we get the first SDL_WINDOWEVENT_ENTER
-        // event where it seems to work consistently on GNOME. This doesn't work for
-        // XWayland though.
-        if (strcmp(SDL_GetCurrentVideoDriver(), "wayland") != 0) {
-            // We know we aren't running on native Wayland now, but
-            // we still may be running on XWayland.
-            if (!WMUtils::isRunningWayland()) {
-                // Neither Wayland or XWayland: capture now
-                m_InputHandler->setCaptureActive(true);
-            }
-            else {
-                // XWayland: mouse capture doesn't work reliably, so let the user
-                // engage the mouse capture via clicking or using the hotkey.
-            }
+    // HACK: For Wayland, we wait until we get the first SDL_WINDOWEVENT_ENTER
+    // event where it seems to work consistently on GNOME. This doesn't work for
+    // XWayland though.
+    if (strcmp(SDL_GetCurrentVideoDriver(), "wayland") != 0) {
+        // We know we aren't running on native Wayland now, but
+        // we still may be running on XWayland.
+        if (!WMUtils::isRunningWayland()) {
+            // Neither Wayland or XWayland: capture now
+            m_InputHandler->setCaptureActive(true);
         }
         else {
-            // Native Wayland: Capture on SDL_WINDOWEVENT_ENTER
-            needsFirstEnterCapture = true;
+            // XWayland: mouse capture doesn't work reliably, so let the user
+            // engage the mouse capture via clicking or using the hotkey.
         }
+    }
+    else {
+        // Native Wayland: Capture on SDL_WINDOWEVENT_ENTER
+        needsFirstEnterCapture = true;
     }
 
     // Stop text input. SDL enables it by default
@@ -1243,10 +1242,10 @@ void Session::exec(int displayOriginX, int displayOriginY)
 
         case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-                m_InputHandler->notifyFocusGained(m_Window);
+                m_InputHandler->notifyFocusGained();
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-                m_InputHandler->notifyFocusLost(m_Window);
+                m_InputHandler->notifyFocusLost();
             }
 
             // Capture the mouse on SDL_WINDOWEVENT_ENTER if needed
@@ -1350,7 +1349,7 @@ void Session::exec(int displayOriginX, int displayOriginY)
             m_InputHandler->handleMouseButtonEvent(&event.button);
             break;
         case SDL_MOUSEMOTION:
-            m_InputHandler->handleMouseMotionEvent(m_Window, &event.motion);
+            m_InputHandler->handleMouseMotionEvent(&event.motion);
             break;
         case SDL_MOUSEWHEEL:
             m_InputHandler->handleMouseWheelEvent(&event.wheel);
@@ -1372,7 +1371,7 @@ void Session::exec(int displayOriginX, int displayOriginY)
         case SDL_FINGERDOWN:
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:
-            m_InputHandler->handleTouchFingerEvent(m_Window, &event.tfinger);
+            m_InputHandler->handleTouchFingerEvent(&event.tfinger);
             break;
         }
     }
@@ -1381,7 +1380,6 @@ DispatchDeferredCleanup:
     // Uncapture the mouse and hide the window immediately,
     // so we can return to the Qt GUI ASAP.
     m_InputHandler->setCaptureActive(false);
-    SDL_SetWindowGrab(m_Window, SDL_FALSE);
     SDL_EnableScreenSaver();
     SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "0");
     if (QGuiApplication::platformName() == "eglfs") {

@@ -150,7 +150,12 @@ SOURCES += \
     cli/quitstream.cpp \
     cli/startstream.cpp \
     settings/streamingpreferences.cpp \
-    streaming/input.cpp \
+    streaming/input/abstouch.cpp \
+    streaming/input/gamepad.cpp \
+    streaming/input/input.cpp \
+    streaming/input/keyboard.cpp \
+    streaming/input/mouse.cpp \
+    streaming/input/reltouch.cpp \
     streaming/session.cpp \
     streaming/audio/audio.cpp \
     streaming/audio/renderers/sdlaud.cpp \
@@ -179,7 +184,7 @@ HEADERS += \
     cli/quitstream.h \
     cli/startstream.h \
     settings/streamingpreferences.h \
-    streaming/input.h \
+    streaming/input/input.h \
     streaming/session.h \
     streaming/audio/renderers/renderer.h \
     streaming/audio/renderers/sdl.h \

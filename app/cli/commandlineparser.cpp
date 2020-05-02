@@ -297,7 +297,8 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addChoiceOption("audio-config", "audio config", m_AudioConfigMap.keys());
     parser.addToggleOption("multi-controller", "multiple controller support");
     parser.addToggleOption("quit-after", "quit app after session");
-    parser.addToggleOption("absolute-mouse", "enable direct mouse control (best for remote desktop rather than games)");
+    parser.addToggleOption("absolute-mouse", "remote desktop optimized mouse control");
+    parser.addToggleOption("touchscreen-trackpad", "touchscreen in trackpad mode");
     parser.addToggleOption("game-optimization", "game optimizations");
     parser.addToggleOption("audio-on-host", "audio on host PC");
     parser.addToggleOption("frame-pacing", "frame pacing");
@@ -387,6 +388,9 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --absolute-mouse and --no-absolute-mouse options
     preferences->absoluteMouseMode = parser.getToggleOptionValue("absolute-mouse", preferences->absoluteMouseMode);
+
+    // Resolve --touchscreen-trackpad and --no-touchscreen-trackpad options
+    preferences->absoluteTouchMode = !parser.getToggleOptionValue("touchscreen-trackpad", !preferences->absoluteTouchMode);
 
     // Resolve --game-optimization and --no-game-optimization options
     preferences->gameOptimizations = parser.getToggleOptionValue("game-optimization", preferences->gameOptimizations);
