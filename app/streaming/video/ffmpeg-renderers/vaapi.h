@@ -68,8 +68,8 @@ private:
     int m_DisplayHeight;
 
 #ifdef HAVE_EGL
-    VADRMPRIMESurfaceDescriptor m_descriptor;
-    EGLImage m_last_images[EGL_MAX_PLANES];
-    bool m_egl_ext_dmabuf;
+    VADRMPRIMESurfaceDescriptor m_PrimeDescriptor;
+    EGLImage m_LastImages[EGL_MAX_PLANES];
+    bool m_EGLExtDmaBuf;
 #endif
 };

@@ -4,7 +4,7 @@
 
 class EGLRenderer : public IFFmpegRenderer {
 public:
-    EGLRenderer(IFFmpegRenderer *frontend_renderer);
+    EGLRenderer(IFFmpegRenderer *backendRenderer);
     virtual ~EGLRenderer() override;
     virtual bool initialize(PDECODER_PARAMETERS params) override;
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary** options) override;
@@ -22,14 +22,14 @@ private:
     void deinitialize();
 
     int m_SwPixelFormat;
-    void *m_egl_display;
-    unsigned m_textures[EGL_MAX_PLANES];
-    unsigned m_shader_program;
-    SDL_GLContext m_context;
-    SDL_Window *m_window;
-    IFFmpegRenderer *m_frontend;
-    unsigned int m_vao;
-    int m_colorspace;
-    bool m_color_full;
+    void *m_EGLDisplay;
+    unsigned m_Textures[EGL_MAX_PLANES];
+    unsigned m_ShaderProgram;
+    SDL_GLContext m_Context;
+    SDL_Window *m_Window;
+    IFFmpegRenderer *m_Backend;
+    unsigned int m_VAO;
+    int m_ColorSpace;
+    bool m_ColorFull;
     EGLImageTargetTexture2DOES_t EGLImageTargetTexture2DOES;
 };

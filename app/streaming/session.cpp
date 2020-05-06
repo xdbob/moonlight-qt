@@ -336,7 +336,7 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_InputHandler(nullptr),
       m_InputHandlerLock(0),
       m_MouseEmulationRefCount(0),
-      m_window_flags(
+      m_windowFlags(
 #ifdef HAVE_EGL
           SDL_WINDOW_OPENGL
 #else
@@ -380,11 +380,11 @@ bool Session::initialize()
 #endif
 
     // Create a hidden window to use for decoder initialization tests
-    SDL_Window* testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_window_flags);
+    SDL_Window* testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_windowFlags);
 #ifdef HAVE_EGL
     if (!testWindow) {
-        m_window_flags &= ~SDL_WINDOW_OPENGL;
-        testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_window_flags);
+        m_windowFlags &= ~SDL_WINDOW_OPENGL;
+        testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_windowFlags);
     }
 #endif
     if (!testWindow) {
@@ -1102,7 +1102,7 @@ void Session::exec(int displayOriginX, int displayOriginY)
                                 y,
                                 width,
                                 height,
-                                SDL_WINDOW_ALLOW_HIGHDPI | m_window_flags);
+                                SDL_WINDOW_ALLOW_HIGHDPI | m_windowFlags);
     if (!m_Window) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SDL_CreateWindow() failed: %s",

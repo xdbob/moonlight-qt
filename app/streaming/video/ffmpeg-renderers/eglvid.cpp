@@ -39,38 +39,38 @@
  */
 
 static QStringList egl_get_extensions(EGLDisplay dpy) {
-    const auto egl_extensions_str = eglQueryString(dpy, EGL_EXTENSIONS);
-    if (!egl_extensions_str) {
+    const auto EGLExtensionsStr = eglQueryString(dpy, EGL_EXTENSIONS);
+    if (!EGLExtensionsStr) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unable to get EGL extensions");
         return QStringList();
     }
-    return QString(egl_extensions_str).split(" ");
+    return QString(EGLExtensionsStr).split(" ");
 }
 
 EGLExtensions::EGLExtensions(EGLDisplay dpy) :
-    m_extensions(egl_get_extensions(dpy))
+    m_Extensions(egl_get_extensions(dpy))
 {}
 
-bool EGLExtensions::is_supported(const QString &extension) const {
-    return m_extensions.contains(extension);
+bool EGLExtensions::isSupported(const QString &extension) const {
+    return m_Extensions.contains(extension);
 }
 
-EGLRenderer::EGLRenderer(IFFmpegRenderer *frontend_renderer)
+EGLRenderer::EGLRenderer(IFFmpegRenderer *backendRenderer)
     :
         m_SwPixelFormat(AV_PIX_FMT_NONE),
-        m_egl_display(nullptr),
-        m_textures{0},
-        m_shader_program(0),
-        m_context(0),
-        m_window(nullptr),
-        m_frontend(frontend_renderer),
-        m_vao(0),
-        m_colorspace(AVCOL_SPC_NB),
-        m_color_full(false),
+        m_EGLDisplay(nullptr),
+        m_Textures{0},
+        m_ShaderProgram(0),
+        m_Context(0),
+        m_Window(nullptr),
+        m_Backend(backendRenderer),
+        m_VAO(0),
+        m_ColorSpace(AVCOL_SPC_NB),
+        m_ColorFull(false),
         EGLImageTargetTexture2DOES(nullptr)
 {
-    SDL_assert(frontend_renderer);
-    SDL_assert(frontend_renderer->canExportEGL());
+    SDL_assert(backendRenderer);
+    SDL_assert(backendRenderer->canExportEGL());
 }
 
 EGLRenderer::~EGLRenderer()
@@ -83,7 +83,7 @@ bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
     /* Nothing to do */
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "Using EGL renderer!!");
+                "Using EGL renderer");
 
     return true;
 }
@@ -117,20 +117,20 @@ static GLuint load_and_build_shader(GLenum shader_type,
     if (!shader || shader == GL_INVALID_ENUM)
         return 0;
 
-    auto source_data = Path::readDataFile(file);
-    GLint len = source_data.size();
-    const char *buf = source_data.data();
+    auto sourceData = Path::readDataFile(file);
+    GLint len = sourceData.size();
+    const char *buf = sourceData.data();
 
     glShaderSource(shader, 1, &buf, &len);
     glCompileShader(shader);
     GLint status;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
     if (!status) {
-        char shader_log[512];
-        glGetShaderInfoLog(shader, sizeof (shader_log), nullptr, shader_log);
+        char shaderLog[512];
+        glGetShaderInfoLog(shader, sizeof (shaderLog), nullptr, shaderLog);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "EGLRenderer: cannot load shader \"%s\": %s",
-                 file, shader_log);
+                     "EGLRenderer: cannot load shader \"%s\": %s",
+                     file, shaderLog);
         return 0;
     }
 
@@ -138,9 +138,9 @@ static GLuint load_and_build_shader(GLenum shader_type,
 }
 
 bool EGLRenderer::compileShader() {
-    if (m_shader_program) {
-        glDeleteProgram(m_shader_program);
-        m_shader_program = 0;
+    if (m_ShaderProgram) {
+        glDeleteProgram(m_ShaderProgram);
+        m_ShaderProgram = 0;
     }
     SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NONE);
 
@@ -149,47 +149,47 @@ bool EGLRenderer::compileShader() {
 
     bool ret = false;
 
-    GLuint vertex_shader = load_and_build_shader(GL_VERTEX_SHADER, "egl.vert");
-    if (!vertex_shader)
+    GLuint vertexShader = load_and_build_shader(GL_VERTEX_SHADER, "egl.vert");
+    if (!vertexShader)
         return false;
 
-    GLuint fragment_shader = load_and_build_shader(GL_FRAGMENT_SHADER, "egl.frag");
-    if (!fragment_shader)
-        goto frag_error;
+    GLuint fragmentShader = load_and_build_shader(GL_FRAGMENT_SHADER, "egl.frag");
+    if (!fragmentShader)
+        goto fragError;
 
-    m_shader_program = glCreateProgram();
-    if (!m_shader_program) {
+    m_ShaderProgram = glCreateProgram();
+    if (!m_ShaderProgram) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "EGLRenderer: cannot create shader program");
-        goto prog_fail_create;
+                     "EGLRenderer: cannot create shader program");
+        goto progFailCreate;
     }
 
-    glAttachShader(m_shader_program, vertex_shader);
-    glAttachShader(m_shader_program, fragment_shader);
-    glLinkProgram(m_shader_program);
+    glAttachShader(m_ShaderProgram, vertexShader);
+    glAttachShader(m_ShaderProgram, fragmentShader);
+    glLinkProgram(m_ShaderProgram);
     int status;
-    glGetProgramiv(m_shader_program, GL_LINK_STATUS, &status);
+    glGetProgramiv(m_ShaderProgram, GL_LINK_STATUS, &status);
     if (status) {
         ret = true;
     } else {
         char shader_log[512];
-        glGetProgramInfoLog(m_shader_program, sizeof (shader_log), nullptr, shader_log);
+        glGetProgramInfoLog(m_ShaderProgram, sizeof (shader_log), nullptr, shader_log);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "EGLRenderer: cannot link shader program: %s",
-                 shader_log);
-        glDeleteProgram(m_shader_program);
+                     "EGLRenderer: cannot link shader program: %s",
+                     shader_log);
+        glDeleteProgram(m_ShaderProgram);
     }
 
-prog_fail_create:
-    glDeleteShader(fragment_shader);
-frag_error:
-    glDeleteShader(vertex_shader);
+progFailCreate:
+    glDeleteShader(fragmentShader);
+fragError:
+    glDeleteShader(vertexShader);
     return ret;
 }
 
 bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 {
-    m_window = params->window;
+    m_Window = params->window;
 
     if (params->videoFormat == VIDEO_FORMAT_H265_MAIN10) {
         // SDL doesn't support rendering YUV 10-bit textures yet
@@ -201,17 +201,17 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     SDL_VERSION(&info.version);
     if (!SDL_GetWindowWMInfo(params->window, &info)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-             "!SDL_GetWindowWMInfo() failed: %s",
-             SDL_GetError());
+                     "!SDL_GetWindowWMInfo() failed: %s",
+                     SDL_GetError());
         return false;
     }
     switch (info.subsystem) {
     case SDL_SYSWM_WAYLAND:
-        m_egl_display = eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
+        m_EGLDisplay = eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
                                               info.info.wl.display, nullptr);
         break;
     case SDL_SYSWM_X11:
-        m_egl_display = eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
+        m_EGLDisplay = eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
                                               info.info.x11.display, nullptr);
         break;
     default:
@@ -220,31 +220,31 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    if (!m_egl_display) {
+    if (!m_EGLDisplay) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot get EGL display: ");
         return false;
     }
 
-    if (!(m_context = SDL_GL_CreateContext(params->window))) {
+    if (!(m_Context = SDL_GL_CreateContext(params->window))) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot create OpenGL context: %s",
                      SDL_GetError());
         return false;
     }
-    if (SDL_GL_MakeCurrent(params->window, m_context)) {
+    if (SDL_GL_MakeCurrent(params->window, m_Context)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot use created EGL context: %s",
                      SDL_GetError());
         return false;
     }
 
-    const EGLExtensions egl_extensions(m_egl_display);
-    if (!egl_extensions.is_supported("EGL_KHR_image_base") &&
-        !egl_extensions.is_supported("EGL_KHR_image")) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported...");
+    const EGLExtensions egl_extensions(m_EGLDisplay);
+    if (!egl_extensions.isSupported("EGL_KHR_image_base") &&
+        !egl_extensions.isSupported("EGL_KHR_image")) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported");
         deinitialize();
         return false;
     }
 
-    if (!m_frontend->initializeEGL(m_egl_display, egl_extensions)) {
+    if (!m_Backend->initializeEGL(m_EGLDisplay, egl_extensions)) {
         deinitialize();
         return false;
     }
@@ -269,9 +269,9 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     SDL_GL_SwapWindow(params->window);
 
-    glGenTextures(EGL_MAX_PLANES, m_textures);
+    glGenTextures(EGL_MAX_PLANES, m_Textures);
     for (size_t i = 0; i < EGL_MAX_PLANES; ++i) {
-        glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
+        glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_Textures[i]);
         glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -288,21 +288,21 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 }
 
 void EGLRenderer::deinitialize() {
-    if (m_context) {
-        if (m_shader_program) {
-            glDeleteProgram(m_shader_program);
-            m_shader_program = 0;
+    if (m_Context) {
+        if (m_ShaderProgram) {
+            glDeleteProgram(m_ShaderProgram);
+            m_ShaderProgram = 0;
         }
-        if (m_vao) {
-            glDeleteVertexArrays(1, &m_vao);
-            m_vao = 0;
+        if (m_VAO) {
+            glDeleteVertexArrays(1, &m_VAO);
+            m_VAO = 0;
         }
-        if (m_egl_display) {
+        if (m_EGLDisplay) {
             // EGL context should be handled by SDL
-            m_egl_display = nullptr;
+            m_EGLDisplay = nullptr;
         }
-        SDL_GL_DeleteContext(m_context);
-        m_context = nullptr;
+        SDL_GL_DeleteContext(m_Context);
+        m_Context = nullptr;
     }
 }
 
@@ -310,64 +310,64 @@ const float *EGLRenderer::getColorMatrix() {
     /* The conversion matrices are shamelessly stolen from linux:
      * drivers/media/platform/imx-pxp.c:pxp_setup_csc
      */
-    static const float bt601_lim[] = {
+    static const float bt601Lim[] = {
         1.1644f, 1.1644f, 1.1644f,
         0.0f, -0.3917f, 2.0172f,
         1.5960f, -0.8129f, 0.0f
     };
-    static const float bt601_full[] = {
+    static const float bt601Full[] = {
         1.0f, 1.0f, 1.0f,
         0.0f, -0.3441f, 1.7720f,
         1.4020f, -0.7141f, 0.0f
     };
-    static const float bt709_lim[] = {
+    static const float bt709Lim[] = {
         1.1644f, 1.1644f, 1.1644f,
         0.0f, -0.2132f, 2.1124f,
         1.7927f, -0.5329f, 0.0f
     };
-    static const float bt709_full[] = {
+    static const float bt709Full[] = {
         1.0f, 1.0f, 1.0f,
         0.0f, -0.1873f, 1.8556f,
         1.5748f, -0.4681f, 0.0f
     };
-    static const float bt2020_lim[] = {
+    static const float bt2020Lim[] = {
         1.1644f, 1.1644f, 1.1644f,
         0.0f, -0.1874f, 2.1418f,
         1.6781f, -0.6505f, 0.0f
     };
-    static const float bt2020_full[] = {
+    static const float bt2020Full[] = {
         1.0f, 1.0f, 1.0f,
         0.0f, -0.1646f, 1.8814f,
         1.4746f, -0.5714f, 0.0f
     };
 
-    switch (m_colorspace) {
+    switch (m_ColorSpace) {
         case AVCOL_SPC_SMPTE170M:
         case AVCOL_SPC_BT470BG:
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "EGLRenderer: BT-601 pixels");
-            return m_color_full ? bt601_full : bt601_lim;
+            return m_ColorFull ? bt601Full : bt601Lim;
         case AVCOL_SPC_BT709:
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "EGLRenderer: BT-709 pixels");
-            return m_color_full ? bt709_full : bt709_lim;
+            return m_ColorFull ? bt709Full : bt709Lim;
         case AVCOL_SPC_BT2020_NCL:
         case AVCOL_SPC_BT2020_CL:
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "EGLRenderer: BT-2020 pixels");
-            return m_color_full ? bt2020_full : bt2020_lim;
+            return m_ColorFull ? bt2020Full : bt2020Lim;
     };
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "EGLRenderer: unknown color space: %d, falling back to BT-601",
-                m_colorspace);
-    return bt601_lim;
+                m_ColorSpace);
+    return bt601Lim;
 }
 
 bool EGLRenderer::specialize() {
     if (!compileShader())
         return false;
-    if (m_vao)
-        glDeleteVertexArrays(1, &m_vao);
+    if (m_VAO)
+        glDeleteVertexArrays(1, &m_VAO);
 
     // XXX: Maybe we should keep the window ratio for the vertices
     static const float vertices[] = {
@@ -383,14 +383,14 @@ bool EGLRenderer::specialize() {
         1, 2, 3,
     };
 
-    glUseProgram(m_shader_program);
+    glUseProgram(m_ShaderProgram);
 
     unsigned int VBO, EBO;
-    glGenVertexArrays(1, &m_vao);
+    glGenVertexArrays(1, &m_VAO);
     glGenBuffers(1, &VBO);
     glGenBuffers(1, &EBO);
 
-    glBindVertexArray(m_vao);
+    glBindVertexArray(m_VAO);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof (vertices), vertices, GL_STATIC_DRAW);
@@ -406,19 +406,19 @@ bool EGLRenderer::specialize() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    int yuvmat_location = glGetUniformLocation(m_shader_program, "yuvmat");
-    glUniformMatrix3fv(yuvmat_location, 1, GL_FALSE, getColorMatrix());
+    int yuvmatLocation = glGetUniformLocation(m_ShaderProgram, "yuvmat");
+    glUniformMatrix3fv(yuvmatLocation, 1, GL_FALSE, getColorMatrix());
 
-    static const float limited_offsets[] = { 16.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f };
-    static const float full_offsets[] = { 0.0f, 128.0f / 255.0f, 128.0f / 255.0f };
+    static const float limitedOffsets[] = { 16.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f };
+    static const float fullOffsets[] = { 0.0f, 128.0f / 255.0f, 128.0f / 255.0f };
 
-    int off_location = glGetUniformLocation(m_shader_program, "offset");
-    glUniform3fv(off_location, 1, m_color_full ? full_offsets : limited_offsets);
+    int offLocation = glGetUniformLocation(m_ShaderProgram, "offset");
+    glUniform3fv(offLocation, 1, m_ColorFull ? fullOffsets : limitedOffsets);
 
-    int color_plane = glGetUniformLocation(m_shader_program, "plane1");
-    glUniform1i(color_plane, 0);
-    color_plane = glGetUniformLocation(m_shader_program, "plane2");
-    glUniform1i(color_plane, 1);
+    int colorPlane = glGetUniformLocation(m_ShaderProgram, "plane1");
+    glUniform1i(colorPlane, 0);
+    colorPlane = glGetUniformLocation(m_ShaderProgram, "plane2");
+    glUniform1i(colorPlane, 1);
 
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
@@ -446,8 +446,8 @@ void EGLRenderer::renderFrame(AVFrame* frame)
                         m_SwPixelFormat);
             // XXX: TODO: Handle other pixel formats
             SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
-            m_colorspace = frame->colorspace;
-            m_color_full = frame->color_range == AVCOL_RANGE_JPEG;
+            m_ColorSpace = frame->colorspace;
+            m_ColorFull = frame->color_range == AVCOL_RANGE_JPEG;
 
             if (!specialize()) {
                 m_SwPixelFormat = AV_PIX_FMT_NONE;
@@ -456,12 +456,12 @@ void EGLRenderer::renderFrame(AVFrame* frame)
         }
 
         EGLImage imgs[EGL_MAX_PLANES];
-        ssize_t plane_count = m_frontend->exportEGLImages(frame, m_egl_display, imgs);
+        ssize_t plane_count = m_Backend->exportEGLImages(frame, m_EGLDisplay, imgs);
         if (plane_count < 0)
             return;
         for (ssize_t i = 0; i < plane_count; ++i) {
             glActiveTexture(GL_TEXTURE0 + i);
-            glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textures[i]);
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_Textures[i]);
             EGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, imgs[i]);
         }
     } else {
@@ -471,10 +471,10 @@ void EGLRenderer::renderFrame(AVFrame* frame)
         return;
     }
 
-    glUseProgram(m_shader_program);
-    glBindVertexArray(m_vao);
+    glUseProgram(m_ShaderProgram);
+    glBindVertexArray(m_VAO);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-    SDL_GL_SwapWindow(m_window);
-    m_frontend->freeEGLImages(m_egl_display);
+    SDL_GL_SwapWindow(m_Window);
+    m_Backend->freeEGLImages(m_EGLDisplay);
 }

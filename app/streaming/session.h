@@ -152,7 +152,7 @@ private:
     int m_ActiveVideoHeight;
     int m_ActiveVideoFrameRate;
 
-    int m_window_flags;
+    int m_windowFlags;
 
     OpusMSDecoder* m_OpusDecoder;
     IAudioRenderer* m_AudioRenderer;

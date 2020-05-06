@@ -19,9 +19,9 @@ class EGLExtensions {
 public:
     EGLExtensions(EGLDisplay dpy);
     ~EGLExtensions() {}
-    bool is_supported(const QString &extension) const;
+    bool isSupported(const QString &extension) const;
 private:
-    const QStringList m_extensions;
+    const QStringList m_Extensions;
 };
 
 #endif

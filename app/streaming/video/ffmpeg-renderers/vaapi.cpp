@@ -18,9 +18,9 @@ VAAPIRenderer::VAAPIRenderer()
       m_BlacklistedForDirectRendering(false)
 {
 #ifdef HAVE_EGL
-    m_descriptor.num_layers = 0;
-    m_descriptor.num_objects = 0;
-    m_egl_ext_dmabuf = false;
+    m_PrimeDescriptor.num_layers = 0;
+    m_PrimeDescriptor.num_objects = 0;
+    m_EGLExtDmaBuf = false;
 #endif
 }
 
@@ -460,12 +460,12 @@ VAAPIRenderer::canExportEGL() {
 bool
 VAAPIRenderer::initializeEGL(EGLDisplay,
                              const EGLExtensions &ext) {
-    if (!ext.is_supported("EGL_EXT_image_dma_buf_import")) {
+    if (!ext.isSupported("EGL_EXT_image_dma_buf_import")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "VAAPI-EGL: DMABUF unsupported...");
+                     "VAAPI-EGL: DMABUF unsupported");
         return false;
     }
-    m_egl_ext_dmabuf = ext.is_supported("EGL_EXT_image_dma_buf_import_modifiers");
+    m_EGLExtDmaBuf = ext.isSupported("EGL_EXT_image_dma_buf_import_modifiers");
     return true;
 }
 
@@ -481,14 +481,14 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
                                         surface_id,
                                         VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
                                         VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
-                                        &m_descriptor);
+                                        &m_PrimeDescriptor);
     if (st != VA_STATUS_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "vaExportSurfaceHandle failed: %d", st);
         return -1;
     }
 
-    SDL_assert(m_descriptor.num_layers <= EGL_MAX_PLANES);
+    SDL_assert(m_PrimeDescriptor.num_layers <= EGL_MAX_PLANES);
 
     st = vaSyncSurface(vaDeviceContext->display, surface_id);
     if (st != VA_STATUS_SUCCESS) {
@@ -497,9 +497,9 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
         goto sync_fail;
     }
 
-    for (size_t i = 0; i < m_descriptor.num_layers; ++i) {
-        const auto &layer = m_descriptor.layers[i];
-        const auto &object = m_descriptor.objects[layer.object_index[0]];
+    for (size_t i = 0; i < m_PrimeDescriptor.num_layers; ++i) {
+        const auto &layer = m_PrimeDescriptor.layers[i];
+        const auto &object = m_PrimeDescriptor.objects[layer.object_index[0]];
 
         EGLAttrib attribs[17] = {
             EGL_LINUX_DRM_FOURCC_EXT, (EGLint)layer.drm_format,
@@ -510,7 +510,7 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
             EGL_DMA_BUF_PLANE0_PITCH_EXT, (EGLint)layer.pitch[0],
             EGL_NONE,
         };
-        if (m_egl_ext_dmabuf) {
+        if (m_EGLExtDmaBuf) {
             const EGLAttrib extra[] = {
                 EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
                 (EGLint)object.drm_format_modifier,
@@ -520,10 +520,10 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
             };
             memcpy((void *)(&attribs[12]), (void *)extra, sizeof (extra));
         }
-        m_last_images[i] = images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
+        m_LastImages[i] = images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
                                                       EGL_LINUX_DMA_BUF_EXT,
                                                       nullptr, attribs);
-        if (!m_last_images[i]) {
+        if (!m_LastImages[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "eglCreateImage() Failed");
             goto create_image_fail;
@@ -533,7 +533,7 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
     return count;
 
 create_image_fail:
-    m_descriptor.num_layers = count;
+    m_PrimeDescriptor.num_layers = count;
 sync_fail:
     freeEGLImages(dpy);
     return -1;
@@ -541,14 +541,14 @@ sync_fail:
 
 void
 VAAPIRenderer::freeEGLImages(EGLDisplay dpy) {
-    for (size_t i = 0; i < m_descriptor.num_layers; ++i) {
-        eglDestroyImage(dpy, m_last_images[i]);
+    for (size_t i = 0; i < m_PrimeDescriptor.num_layers; ++i) {
+        eglDestroyImage(dpy, m_LastImages[i]);
     }
-    for (size_t i = 0; i < m_descriptor.num_objects; ++i) {
-        close(m_descriptor.objects[i].fd);
+    for (size_t i = 0; i < m_PrimeDescriptor.num_objects; ++i) {
+        close(m_PrimeDescriptor.objects[i].fd);
     }
-    m_descriptor.num_layers = 0;
-    m_descriptor.num_objects = 0;
+    m_PrimeDescriptor.num_layers = 0;
+    m_PrimeDescriptor.num_objects = 0;
 }
 
 #endif
