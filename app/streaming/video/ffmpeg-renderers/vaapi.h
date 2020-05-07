@@ -46,7 +46,7 @@ public:
     virtual bool canExportEGL() override;
     virtual bool initializeEGL(EGLDisplay dpy, const EGLExtensions &ext);
     virtual ssize_t exportEGLImages(AVFrame *frame, EGLDisplay dpy, EGLImage images[EGL_MAX_PLANES]) override;
-    virtual void freeEGLImages(EGLDisplay dpy) override;
+    virtual void freeEGLImages(EGLDisplay dpy, EGLImage[EGL_MAX_PLANES]) override;
 #endif
 
 private:
@@ -69,7 +69,6 @@ private:
 
 #ifdef HAVE_EGL
     VADRMPRIMESurfaceDescriptor m_PrimeDescriptor;
-    EGLImage m_LastImages[EGL_MAX_PLANES];
     bool m_EGLExtDmaBuf;
 #endif
 };

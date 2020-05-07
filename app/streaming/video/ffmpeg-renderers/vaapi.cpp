@@ -520,10 +520,10 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
             };
             memcpy((void *)(&attribs[12]), (void *)extra, sizeof (extra));
         }
-        m_LastImages[i] = images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
+        images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
                                                       EGL_LINUX_DMA_BUF_EXT,
                                                       nullptr, attribs);
-        if (!m_LastImages[i]) {
+        if (!images[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "eglCreateImage() Failed");
             goto create_image_fail;
@@ -535,14 +535,14 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
 create_image_fail:
     m_PrimeDescriptor.num_layers = count;
 sync_fail:
-    freeEGLImages(dpy);
+    freeEGLImages(dpy, images);
     return -1;
 }
 
 void
-VAAPIRenderer::freeEGLImages(EGLDisplay dpy) {
+VAAPIRenderer::freeEGLImages(EGLDisplay dpy, EGLImage images[EGL_MAX_PLANES]) {
     for (size_t i = 0; i < m_PrimeDescriptor.num_layers; ++i) {
-        eglDestroyImage(dpy, m_LastImages[i]);
+        eglDestroyImage(dpy, images[i]);
     }
     for (size_t i = 0; i < m_PrimeDescriptor.num_objects; ++i) {
         close(m_PrimeDescriptor.objects[i].fd);

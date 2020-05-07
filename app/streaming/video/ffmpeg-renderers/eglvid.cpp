@@ -417,6 +417,7 @@ bool EGLRenderer::specialize() {
 
 void EGLRenderer::renderFrame(AVFrame* frame)
 {
+    EGLImage imgs[EGL_MAX_PLANES];
     if (frame->hw_frames_ctx != nullptr) {
         // Find the native read-back format and load the shader
         if (m_SwPixelFormat == AV_PIX_FMT_NONE) {
@@ -439,7 +440,6 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             }
         }
 
-        EGLImage imgs[EGL_MAX_PLANES];
         ssize_t plane_count = m_Backend->exportEGLImages(frame, m_EGLDisplay, imgs);
         if (plane_count < 0)
             return;
@@ -460,5 +460,6 @@ void EGLRenderer::renderFrame(AVFrame* frame)
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     SDL_GL_SwapWindow(m_Window);
-    m_Backend->freeEGLImages(m_EGLDisplay);
+    if (frame->hw_frames_ctx != nullptr)
+        m_Backend->freeEGLImages(m_EGLDisplay, imgs);
 }
