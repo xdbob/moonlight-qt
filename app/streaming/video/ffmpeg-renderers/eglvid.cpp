@@ -80,12 +80,7 @@ EGLRenderer::~EGLRenderer()
             glDeleteProgram(m_ShaderProgram);
         if (m_VAO)
             glDeleteVertexArrays(1, &m_VAO);
-        if (m_EGLDisplay) {
-            // EGL context should be handled by SDL
-            m_EGLDisplay = nullptr;
-        }
         SDL_GL_DeleteContext(m_Context);
-        m_Context = nullptr;
     }
 }
 
@@ -217,11 +212,11 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     switch (info.subsystem) {
     case SDL_SYSWM_WAYLAND:
         m_EGLDisplay = eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
-                                              info.info.wl.display, nullptr);
+                                             info.info.wl.display, nullptr);
         break;
     case SDL_SYSWM_X11:
         m_EGLDisplay = eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
-                                              info.info.x11.display, nullptr);
+                                             info.info.x11.display, nullptr);
         break;
     default:
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,

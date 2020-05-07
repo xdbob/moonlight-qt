@@ -521,8 +521,8 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
             memcpy((void *)(&attribs[12]), (void *)extra, sizeof (extra));
         }
         images[i] = eglCreateImage(dpy, EGL_NO_CONTEXT,
-                                                      EGL_LINUX_DMA_BUF_EXT,
-                                                      nullptr, attribs);
+                                   EGL_LINUX_DMA_BUF_EXT,
+                                   nullptr, attribs);
         if (!images[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "eglCreateImage() Failed");
