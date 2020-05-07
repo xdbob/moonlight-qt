@@ -95,7 +95,7 @@ void EGLRenderer::notifyOverlayUpdated(Overlay::OverlayType)
 
 bool EGLRenderer::isRenderThreadSupported()
 {
-    // TODO: FIXME (maybe ?)
+    // TODO: can we use DMA-BUF in multithreaded context ?
     return false;
 }
 
