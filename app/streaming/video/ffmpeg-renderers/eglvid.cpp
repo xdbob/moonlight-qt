@@ -111,9 +111,9 @@ bool EGLRenderer::isPixelFormatSupported(int, AVPixelFormat pixelFormat)
     }
 }
 
-static GLuint load_and_build_shader(GLenum shader_type,
-                    const char *file) {
-    GLuint shader = glCreateShader(shader_type);
+int EGLRenderer::loadAndBuildShader(int shaderType,
+                                    const char *file) {
+    GLuint shader = glCreateShader(shaderType);
     if (!shader || shader == GL_INVALID_ENUM)
         return 0;
 
@@ -149,11 +149,11 @@ bool EGLRenderer::compileShader() {
 
     bool ret = false;
 
-    GLuint vertexShader = load_and_build_shader(GL_VERTEX_SHADER, "egl.vert");
+    GLuint vertexShader = loadAndBuildShader(GL_VERTEX_SHADER, "egl.vert");
     if (!vertexShader)
         return false;
 
-    GLuint fragmentShader = load_and_build_shader(GL_FRAGMENT_SHADER, "egl.frag");
+    GLuint fragmentShader = loadAndBuildShader(GL_FRAGMENT_SHADER, "egl.frag");
     if (!fragmentShader)
         goto fragError;
 

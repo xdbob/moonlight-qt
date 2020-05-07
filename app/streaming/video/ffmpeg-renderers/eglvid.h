@@ -20,6 +20,7 @@ private:
     bool specialize();
     const float *getColorMatrix();
     void deinitialize();
+    static int loadAndBuildShader(int shaderType, const char *filename);
 
     int m_SwPixelFormat;
     void *m_EGLDisplay;
