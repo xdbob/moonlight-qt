@@ -149,10 +149,7 @@ int EGLRenderer::loadAndBuildShader(int shaderType,
 }
 
 bool EGLRenderer::compileShader() {
-    if (m_ShaderProgram) {
-        glDeleteProgram(m_ShaderProgram);
-        m_ShaderProgram = 0;
-    }
+    SDL_assert(!m_ShaderProgram);
     SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NONE);
 
     // XXX: TODO: other formats
@@ -351,10 +348,10 @@ const float *EGLRenderer::getColorMatrix() {
 }
 
 bool EGLRenderer::specialize() {
+    SDL_assert(!m_VAO);
+
     if (!compileShader())
         return false;
-    if (m_VAO)
-        glDeleteVertexArrays(1, &m_VAO);
 
     // XXX: Maybe we should keep the window ratio for the vertices
     static const float vertices[] = {
