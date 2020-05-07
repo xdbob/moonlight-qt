@@ -75,7 +75,18 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *backendRenderer)
 
 EGLRenderer::~EGLRenderer()
 {
-    deinitialize();
+    if (m_Context) {
+        if (m_ShaderProgram)
+            glDeleteProgram(m_ShaderProgram);
+        if (m_VAO)
+            glDeleteVertexArrays(1, &m_VAO);
+        if (m_EGLDisplay) {
+            // EGL context should be handled by SDL
+            m_EGLDisplay = nullptr;
+        }
+        SDL_GL_DeleteContext(m_Context);
+        m_Context = nullptr;
+    }
 }
 
 bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
@@ -241,19 +252,15 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     if (!egl_extensions.isSupported("EGL_KHR_image_base") &&
         !egl_extensions.isSupported("EGL_KHR_image")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported");
-        deinitialize();
         return false;
     }
 
-    if (!m_Backend->initializeEGL(m_EGLDisplay, egl_extensions)) {
-        deinitialize();
+    if (!m_Backend->initializeEGL(m_EGLDisplay, egl_extensions))
         return false;
-    }
 
     if (!(EGLImageTargetTexture2DOES = (EGLImageTargetTexture2DOES_t)eglGetProcAddress("glEGLImageTargetTexture2DOES"))) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "EGL: cannot retrieve `EGLImageTargetTexture2DOES` address");
-        deinitialize();
         return false;
     }
 
@@ -280,31 +287,10 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
+    if (err != GL_NO_ERROR)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
-        deinitialize();
-    }
 
     return err == GL_NO_ERROR;
-}
-
-void EGLRenderer::deinitialize() {
-    if (m_Context) {
-        if (m_ShaderProgram) {
-            glDeleteProgram(m_ShaderProgram);
-            m_ShaderProgram = 0;
-        }
-        if (m_VAO) {
-            glDeleteVertexArrays(1, &m_VAO);
-            m_VAO = 0;
-        }
-        if (m_EGLDisplay) {
-            // EGL context should be handled by SDL
-            m_EGLDisplay = nullptr;
-        }
-        SDL_GL_DeleteContext(m_Context);
-        m_Context = nullptr;
-    }
 }
 
 const float *EGLRenderer::getColorMatrix() {
