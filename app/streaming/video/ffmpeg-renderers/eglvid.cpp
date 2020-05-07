@@ -178,6 +178,7 @@ bool EGLRenderer::compileShader() {
                      "EGLRenderer: cannot link shader program: %s",
                      shader_log);
         glDeleteProgram(m_ShaderProgram);
+        m_ShaderProgram = 0;
     }
 
 progFailCreate:
