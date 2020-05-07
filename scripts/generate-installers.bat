@@ -9,14 +9,11 @@ set ARCH=%2
 rem Convert to lower case for windeployqt
 if /I "%BUILD_CONFIG%"=="debug" (
     set BUILD_CONFIG=debug
+    set WIX_MUMS=10
 ) else (
     if /I "%BUILD_CONFIG%"=="release" (
         set BUILD_CONFIG=release
-
-        if /I "%APPVEYOR%"=="True" (
-            echo Stamping with AppVeyor version: %APPVEYOR_BUILD_VERSION%
-            echo | set /p dummyName="%APPVEYOR_BUILD_VERSION%" > app\version.txt
-        )
+        set WIX_MUMS=10
     ) else (
         if /I "%BUILD_CONFIG%"=="signed-release" (
             set BUILD_CONFIG=release
@@ -82,7 +79,7 @@ popd
 
 echo Compiling Moonlight in %BUILD_CONFIG% configuration
 pushd %BUILD_FOLDER%
-nmake %BUILD_CONFIG%
+%SOURCE_ROOT%\scripts\jom.exe %BUILD_CONFIG%
 if !ERRORLEVEL! NEQ 0 goto Error
 popd
 
