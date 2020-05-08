@@ -11,6 +11,7 @@
 #include <Limelight.h>
 #include <unistd.h>
 
+#include <SDL_render.h>
 #include <SDL_egl.h>
 #include <SDL_opengl.h>
 #include <SDL_syswm.h>
@@ -50,7 +51,8 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *backendRenderer)
         m_VAO(0),
         m_ColorSpace(AVCOL_SPC_NB),
         m_ColorFull(false),
-        EGLImageTargetTexture2DOES(nullptr)
+        EGLImageTargetTexture2DOES(nullptr),
+        m_dummyRenderer(nullptr)
 {
     SDL_assert(backendRenderer);
     SDL_assert(backendRenderer->canExportEGL());
@@ -63,6 +65,8 @@ EGLRenderer::~EGLRenderer()
             glDeleteProgram(m_ShaderProgram);
         if (m_VAO)
             glDeleteVertexArrays(1, &m_VAO);
+        if (m_dummyRenderer)
+            SDL_DestroyRenderer(m_dummyRenderer);
         SDL_GL_DeleteContext(m_Context);
     }
 }
@@ -181,6 +185,40 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     if (params->videoFormat == VIDEO_FORMAT_H265_MAIN10) {
         // SDL doesn't support rendering YUV 10-bit textures yet
         // TODO: FIXME
+        return false;
+    }
+
+    /*
+     * Create a dummy renderer in order to craft an accelerated SDL Window.
+     * Request opengl ES 3.0 context, otherwise it will SIGSEGV
+     * https://gitlab.freedesktop.org/mesa/mesa/issues/1011
+     */
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+
+    int renderIndex;
+    int maxRenderers = SDL_GetNumRenderDrivers();
+    SDL_assert(maxRenderers >= 0);
+
+    SDL_RendererInfo renderInfo;
+    for (renderIndex = 0; renderIndex < maxRenderers; ++renderIndex) {
+        if (SDL_GetRenderDriverInfo(renderIndex, &renderInfo))
+            continue;
+        if (!strcmp(renderInfo.name, "opengles2")) {
+            SDL_assert(renderInfo.flags & SDL_RENDERER_ACCELERATED);
+            break;
+        }
+    }
+    if (renderIndex == maxRenderers) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "EGLRenderer: could not find a suitable SDL_Renderer");
+        return false;
+    }
+
+    if (!(m_dummyRenderer = SDL_CreateRenderer(m_Window, renderIndex, SDL_RENDERER_ACCELERATED))) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SDL_CreateRenderer() failed: %s", SDL_GetError());
         return false;
     }
 

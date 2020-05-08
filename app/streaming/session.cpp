@@ -336,13 +336,6 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_InputHandler(nullptr),
       m_InputHandlerLock(0),
       m_MouseEmulationRefCount(0),
-      m_windowFlags(
-#ifdef HAVE_EGL
-          SDL_WINDOW_OPENGL
-#else
-          0
-#endif
-      ),
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
       m_AudioSampleCount(0),
@@ -369,24 +362,8 @@ bool Session::initialize()
         return false;
     }
 
-#ifdef HAVE_EGL
-    /* Request opengl ES 3.0 context for EGL Renderer, otherwise it will
-     * SIGSEGV: https://gitlab.freedesktop.org/mesa/mesa/issues/1011
-     */
-    SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#endif
-
     // Create a hidden window to use for decoder initialization tests
-    SDL_Window* testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_windowFlags);
-#ifdef HAVE_EGL
-    if (!testWindow) {
-        m_windowFlags &= ~SDL_WINDOW_OPENGL;
-        testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN | m_windowFlags);
-    }
-#endif
+    SDL_Window* testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN);
     if (!testWindow) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Failed to create window for hardware decode test: %s",
@@ -1102,7 +1079,7 @@ void Session::exec(int displayOriginX, int displayOriginY)
                                 y,
                                 width,
                                 height,
-                                SDL_WINDOW_ALLOW_HIGHDPI | m_windowFlags);
+                                SDL_WINDOW_ALLOW_HIGHDPI);
     if (!m_Window) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SDL_CreateWindow() failed: %s",

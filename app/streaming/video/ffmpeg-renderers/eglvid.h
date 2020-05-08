@@ -32,4 +32,5 @@ private:
     int m_ColorSpace;
     bool m_ColorFull;
     EGLImageTargetTexture2DOES_t EGLImageTargetTexture2DOES;
+    SDL_Renderer *m_dummyRenderer;
 };
