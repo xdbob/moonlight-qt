@@ -270,7 +270,9 @@ egl {
     message(EGL renderer selected)
 
     DEFINES += HAVE_EGL
-    SOURCES += streaming/video/ffmpeg-renderers/eglvid.cpp
+    SOURCES += \
+        streaming/video/ffmpeg-renderers/eglvid.cpp \
+        streaming/video/ffmpeg-renderers/egl_extensions.cpp
     HEADERS += streaming/video/ffmpeg-renderers/eglvid.h
 }
 config_SL {
