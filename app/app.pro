@@ -137,6 +137,7 @@ macx {
 }
 
 SOURCES += \
+    backend/nvapp.cpp \
     main.cpp \
     backend/computerseeker.cpp \
     backend/identitymanager.cpp \
@@ -171,6 +172,7 @@ SOURCES += \
     wm.cpp
 
 HEADERS += \
+    backend/nvapp.h \
     utils.h \
     backend/computerseeker.h \
     backend/identitymanager.h \
