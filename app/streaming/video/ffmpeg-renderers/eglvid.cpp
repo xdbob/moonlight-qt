@@ -52,7 +52,7 @@ EGLRenderer::EGLRenderer(IFFmpegRenderer *backendRenderer)
         m_ColorSpace(AVCOL_SPC_NB),
         m_ColorFull(false),
         EGLImageTargetTexture2DOES(nullptr),
-        m_dummyRenderer(nullptr)
+        m_DummyRenderer(nullptr)
 {
     SDL_assert(backendRenderer);
     SDL_assert(backendRenderer->canExportEGL());
@@ -65,8 +65,8 @@ EGLRenderer::~EGLRenderer()
             glDeleteProgram(m_ShaderProgram);
         if (m_VAO)
             glDeleteVertexArrays(1, &m_VAO);
-        if (m_dummyRenderer)
-            SDL_DestroyRenderer(m_dummyRenderer);
+        if (m_DummyRenderer)
+            SDL_DestroyRenderer(m_DummyRenderer);
         SDL_GL_DeleteContext(m_Context);
     }
 }
@@ -216,7 +216,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    if (!(m_dummyRenderer = SDL_CreateRenderer(m_Window, renderIndex, SDL_RENDERER_ACCELERATED))) {
+    if (!(m_DummyRenderer = SDL_CreateRenderer(m_Window, renderIndex, SDL_RENDERER_ACCELERATED))) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SDL_CreateRenderer() failed: %s", SDL_GetError());
         return false;
