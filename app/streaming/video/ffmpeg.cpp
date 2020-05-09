@@ -198,8 +198,8 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params)
         // The backend renderer can render to the display
         m_FrontendRenderer = m_BackendRenderer;
     }
-#ifdef HAVE_EGL
     else {
+#ifdef HAVE_EGL
         if (m_BackendRenderer->canExportEGL()) {
             m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
             if (m_FrontendRenderer->initialize(params)) {
