@@ -3,21 +3,21 @@
 
 #include "eglvid.h"
 
-#include "streaming/streamutils.h"
-#include "streaming/session.h"
 #include "path.h"
+#include "streaming/session.h"
+#include "streaming/streamutils.h"
 
 #include <QDir>
 
 #include <Limelight.h>
 #include <unistd.h>
 
-#include <SDL_render.h>
 #include <SDL_egl.h>
 #include <SDL_opengl.h>
-#include <SDL_syswm.h>
 #include <SDL_opengles2.h>
 #include <SDL_opengles2_gl2ext.h>
+#include <SDL_render.h>
+#include <SDL_syswm.h>
 
 /* TODO:
  *  - handle more pixel formats
