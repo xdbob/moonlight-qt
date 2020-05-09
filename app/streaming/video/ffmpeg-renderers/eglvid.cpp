@@ -3,6 +3,7 @@
 
 #include "eglvid.h"
 
+#include "streaming/streamutils.h"
 #include "streaming/session.h"
 #include "path.h"
 
@@ -277,6 +278,18 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
+    /* Compute the video region size in order to keep the aspect ratio of the
+     * video stream.
+     */
+    SDL_Rect src, dst;
+    src.x = src.y = dst.x = dst.y = 0;
+    src.w = params->width;
+    src.h = params->height;
+    SDL_GetWindowSize(m_Window, &dst.w, &dst.h);
+    StreamUtils::scaleSourceToDestinationSurface(&src, &dst);
+
+    glViewport(dst.x, dst.y, dst.w, dst.h);
+
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -369,7 +382,7 @@ bool EGLRenderer::specialize() {
     if (!compileShader())
         return false;
 
-    // XXX: Maybe we should keep the window ratio for the vertices
+    // The viewport should have the aspect ratio of the video stream
     static const float vertices[] = {
         // pos .... // tex coords
         1.0f, 1.0f, 1.0f, 0.0f,
