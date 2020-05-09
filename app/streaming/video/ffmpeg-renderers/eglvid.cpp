@@ -21,9 +21,7 @@
 
 /* TODO:
  *  - handle more pixel formats
- *  - code refacto/cleanup
  *  - handle software decoding
- *  - handle window resize
  */
 
 /* DOC/misc:
