@@ -469,6 +469,7 @@ void EGLRenderer::renderFrame(AVFrame* frame)
         return;
     }
 
+    glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(m_ShaderProgram);
     glBindVertexArray(m_VAO);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
