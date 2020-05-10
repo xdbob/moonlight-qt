@@ -134,7 +134,7 @@ bool EGLRenderer::compileShader() {
     SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NONE);
 
     // XXX: TODO: other formats
-    SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NV12);
+    SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
 
     bool ret = false;
 
