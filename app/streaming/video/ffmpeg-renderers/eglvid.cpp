@@ -109,8 +109,10 @@ bool EGLRenderer::isPixelFormatSupported(int, AVPixelFormat pixelFormat)
 int EGLRenderer::loadAndBuildShader(int shaderType,
                                     const char *file) {
     GLuint shader = glCreateShader(shaderType);
-    if (!shader || shader == GL_INVALID_ENUM)
+    if (!shader || shader == GL_INVALID_ENUM) {
+        EGL_LOG(Error, "Can't create shader: %d", glGetError());
         return 0;
+    }
 
     auto sourceData = Path::readDataFile(file);
     GLint len = sourceData.size();
@@ -238,7 +240,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     if (!m_EGLDisplay) {
-        EGL_LOG(Error, "Cannot get EGL display: ");
+        EGL_LOG(Error, "Cannot get EGL display: %d", eglGetError());
         return false;
     }
 

@@ -525,7 +525,7 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
                                    nullptr, attribs);
         if (!images[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "eglCreateImage() Failed");
+                         "eglCreateImage() Failed: %d", eglGetError());
             goto create_image_fail;
         }
         ++count;
