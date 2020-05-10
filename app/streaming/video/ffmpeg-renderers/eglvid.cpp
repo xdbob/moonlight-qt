@@ -3,6 +3,7 @@
 
 #include "eglvid.h"
 
+#include "gl_errors.h"
 #include "path.h"
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
@@ -110,7 +111,8 @@ int EGLRenderer::loadAndBuildShader(int shaderType,
                                     const char *file) {
     GLuint shader = glCreateShader(shaderType);
     if (!shader || shader == GL_INVALID_ENUM) {
-        EGL_LOG(Error, "Can't create shader: %d", glGetError());
+        EGL_LOG(Error, "Can't create shader: %s",
+                glErrors::glStrError(glGetError()));
         return 0;
     }
 
@@ -240,7 +242,8 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     if (!m_EGLDisplay) {
-        EGL_LOG(Error, "Cannot get EGL display: %d", eglGetError());
+        EGL_LOG(Error, "Cannot get EGL display: %s",
+                glErrors::eglStrError(eglGetError()));
         return false;
     }
 
@@ -305,7 +308,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     GLenum err = glGetError();
     if (err != GL_NO_ERROR)
-        EGL_LOG(Error, "OpenGL error: %d", err);
+        EGL_LOG(Error, "OpenGL error: %s", glErrors::glStrError(err));
 
     return err == GL_NO_ERROR;
 }
@@ -425,7 +428,7 @@ bool EGLRenderer::specialize() {
 
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-        EGL_LOG(Error, "OpenGL error: %d", err);
+        EGL_LOG(Error, "OpenGL error: %s", glErrors::glStrError(err));
     }
 
     return err == GL_NO_ERROR;

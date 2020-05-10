@@ -6,6 +6,7 @@
 
 #include <SDL_syswm.h>
 #ifdef HAVE_EGL
+#include "gl_errors.h"
 #include <SDL_egl.h>
 #endif
 
@@ -525,7 +526,8 @@ VAAPIRenderer::exportEGLImages(AVFrame *frame, EGLDisplay dpy,
                                    nullptr, attribs);
         if (!images[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "eglCreateImage() Failed: %d", eglGetError());
+                         "eglCreateImage() Failed: %s",
+                         glErrors::eglStrError(eglGetError()));
             goto create_image_fail;
         }
         ++count;
