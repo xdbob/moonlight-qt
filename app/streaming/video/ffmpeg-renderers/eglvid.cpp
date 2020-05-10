@@ -182,8 +182,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     m_Window = params->window;
 
     if (params->videoFormat == VIDEO_FORMAT_H265_MAIN10) {
-        // SDL doesn't support rendering YUV 10-bit textures yet
-        // TODO: FIXME
+        // EGL doesn't support rendering YUV 10-bit textures yet
         return false;
     }
 
@@ -226,7 +225,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
     SDL_VERSION(&info.version);
     if (!SDL_GetWindowWMInfo(params->window, &info)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "!SDL_GetWindowWMInfo() failed: %s",
+                     "SDL_GetWindowWMInfo() failed: %s",
                      SDL_GetError());
         return false;
     }
