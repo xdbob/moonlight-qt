@@ -38,6 +38,10 @@
  *  - https://wiki.libsdl.org/CategoryVideo
  */
 
+#define EGL_LOG(Category, ...) SDL_Log ## Category(\
+        SDL_LOG_CATEGORY_APPLICATION, \
+        "EGLRenderer: " __VA_ARGS__)
+
 EGLRenderer::EGLRenderer(IFFmpegRenderer *backendRenderer)
     :
         m_SwPixelFormat(AV_PIX_FMT_NONE),
@@ -74,8 +78,7 @@ bool EGLRenderer::prepareDecoderContext(AVCodecContext*, AVDictionary**)
 {
     /* Nothing to do */
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "Using EGL renderer");
+    EGL_LOG(Info, "Using EGL renderer");
 
     return true;
 }
@@ -120,9 +123,7 @@ int EGLRenderer::loadAndBuildShader(int shaderType,
     if (!status) {
         char shaderLog[512];
         glGetShaderInfoLog(shader, sizeof (shaderLog), nullptr, shaderLog);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGLRenderer: cannot load shader \"%s\": %s",
-                     file, shaderLog);
+        EGL_LOG(Error, "Cannot load shader \"%s\": %s", file, shaderLog);
         return 0;
     }
 
@@ -148,8 +149,7 @@ bool EGLRenderer::compileShader() {
 
     m_ShaderProgram = glCreateProgram();
     if (!m_ShaderProgram) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGLRenderer: cannot create shader program");
+        EGL_LOG(Error, "Cannot create shader program");
         goto progFailCreate;
     }
 
@@ -163,9 +163,7 @@ bool EGLRenderer::compileShader() {
     } else {
         char shader_log[512];
         glGetProgramInfoLog(m_ShaderProgram, sizeof (shader_log), nullptr, shader_log);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGLRenderer: cannot link shader program: %s",
-                     shader_log);
+        EGL_LOG(Error, "Cannot link shader program: %s", shader_log);
         glDeleteProgram(m_ShaderProgram);
         m_ShaderProgram = 0;
     }
@@ -210,23 +208,19 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         }
     }
     if (renderIndex == maxRenderers) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGLRenderer: could not find a suitable SDL_Renderer");
+        EGL_LOG(Error, "Could not find a suitable SDL_Renderer");
         return false;
     }
 
     if (!(m_DummyRenderer = SDL_CreateRenderer(m_Window, renderIndex, SDL_RENDERER_ACCELERATED))) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_CreateRenderer() failed: %s", SDL_GetError());
+        EGL_LOG(Error, "SDL_CreateRenderer() failed: %s", SDL_GetError());
         return false;
     }
 
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);
     if (!SDL_GetWindowWMInfo(params->window, &info)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_GetWindowWMInfo() failed: %s",
-                     SDL_GetError());
+        EGL_LOG(Error, "SDL_GetWindowWMInfo() failed: %s", SDL_GetError());
         return false;
     }
     switch (info.subsystem) {
@@ -239,31 +233,28 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
                                              info.info.x11.display, nullptr);
         break;
     default:
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGLRenderer: not compatible with SYSWM");
+        EGL_LOG(Error, "not compatible with SYSWM");
         return false;
     }
 
     if (!m_EGLDisplay) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot get EGL display: ");
+        EGL_LOG(Error, "Cannot get EGL display: ");
         return false;
     }
 
     if (!(m_Context = SDL_GL_CreateContext(params->window))) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot create OpenGL context: %s",
-                     SDL_GetError());
+        EGL_LOG(Error, "Cannot create OpenGL context: %s", SDL_GetError());
         return false;
     }
     if (SDL_GL_MakeCurrent(params->window, m_Context)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot use created EGL context: %s",
-                     SDL_GetError());
+        EGL_LOG(Error, "Cannot use created EGL context: %s", SDL_GetError());
         return false;
     }
 
     const EGLExtensions egl_extensions(m_EGLDisplay);
     if (!egl_extensions.isSupported("EGL_KHR_image_base") &&
         !egl_extensions.isSupported("EGL_KHR_image")) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "EGL: KHR_image unsupported");
+        EGL_LOG(Error, "KHR_image unsupported");
         return false;
     }
 
@@ -271,8 +262,8 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
         return false;
 
     if (!(EGLImageTargetTexture2DOES = (EGLImageTargetTexture2DOES_t)eglGetProcAddress("glEGLImageTargetTexture2DOES"))) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGL: cannot retrieve `EGLImageTargetTexture2DOES` address");
+        EGL_LOG(Error,
+                "EGL: cannot retrieve `EGLImageTargetTexture2DOES` address");
         return false;
     }
 
@@ -312,7 +303,7 @@ bool EGLRenderer::initialize(PDECODER_PARAMETERS params)
 
     GLenum err = glGetError();
     if (err != GL_NO_ERROR)
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
+        EGL_LOG(Error, "OpenGL error: %d", err);
 
     return err == GL_NO_ERROR;
 }
@@ -355,22 +346,18 @@ const float *EGLRenderer::getColorMatrix() {
     switch (m_ColorSpace) {
         case AVCOL_SPC_SMPTE170M:
         case AVCOL_SPC_BT470BG:
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "EGLRenderer: BT-601 pixels");
+            EGL_LOG(Info, "BT-601 pixels");
             return m_ColorFull ? bt601Full : bt601Lim;
         case AVCOL_SPC_BT709:
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "EGLRenderer: BT-709 pixels");
+            EGL_LOG(Info, "BT-709 pixels");
             return m_ColorFull ? bt709Full : bt709Lim;
         case AVCOL_SPC_BT2020_NCL:
         case AVCOL_SPC_BT2020_CL:
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "EGLRenderer: BT-2020 pixels");
+            EGL_LOG(Info, "BT-2020 pixels");
             return m_ColorFull ? bt2020Full : bt2020Lim;
     };
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "EGLRenderer: unknown color space: %d, falling back to BT-601",
-                m_ColorSpace);
+    EGL_LOG(Warn, "unknown color space: %d, falling back to BT-601",
+            m_ColorSpace);
     return bt601Lim;
 }
 
@@ -436,7 +423,7 @@ bool EGLRenderer::specialize() {
 
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OpenGL error: %d", err);
+        EGL_LOG(Error, "OpenGL error: %d", err);
     }
 
     return err == GL_NO_ERROR;
@@ -453,9 +440,8 @@ void EGLRenderer::renderFrame(AVFrame* frame)
             m_SwPixelFormat = hwFrameCtx->sw_format;
             SDL_assert(m_SwPixelFormat != AV_PIX_FMT_NONE);
 
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Selected read-back format: %d",
-                        m_SwPixelFormat);
+            EGL_LOG(Info, "Selected read-back format: %d", m_SwPixelFormat);
+
             // XXX: TODO: Handle other pixel formats
             SDL_assert(m_SwPixelFormat == AV_PIX_FMT_NV12);
             m_ColorSpace = frame->colorspace;
@@ -477,8 +463,7 @@ void EGLRenderer::renderFrame(AVFrame* frame)
         }
     } else {
         // TODO: load texture for SW decoding ?
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "EGL rendering only supports hw frames");
+        EGL_LOG(Error, "EGL rendering only supports hw frames");
         return;
     }
 
