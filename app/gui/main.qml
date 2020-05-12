@@ -175,6 +175,17 @@ ApplicationWindow {
         anchors.topMargin: 5
         anchors.bottomMargin: 5
 
+        Label {
+            id: titleLabel
+            visible: toolBar.width > 700
+            anchors.fill: parent
+            text: stackView.currentItem.objectName
+            font.pointSize: 20
+            elide: Label.ElideRight
+            horizontalAlignment: Qt.AlignHCenter
+            verticalAlignment: Qt.AlignVCenter
+        }
+
         RowLayout {
             spacing: 20
             anchors.leftMargin: 10
@@ -194,14 +205,29 @@ ApplicationWindow {
                 }
             }
 
+            // This label will appear when the window gets too small and
+            // we need to ensure the toolbar controls don't collide
             Label {
-                id: titleLabel
-                text: stackView.currentItem.objectName
-                font.pointSize: 15
+                id: titleRowLabel
+                font.pointSize: titleLabel.font.pointSize
                 elide: Label.ElideRight
                 horizontalAlignment: Qt.AlignHCenter
                 verticalAlignment: Qt.AlignVCenter
                 Layout.fillWidth: true
+
+                // We need this label to always be visible so it can occupy
+                // the remaining space in the RowLayout. To "hide" it, we
+                // just set the text to empty string.
+                text: !titleLabel.visible ? stackView.currentItem.objectName : ""
+            }
+
+            Label {
+                id: versionLabel
+                visible: stackView.currentItem.objectName === "Settings"
+                text: "Version " + SystemProperties.versionString
+                font.pointSize: 12
+                horizontalAlignment: Qt.AlignRight
+                verticalAlignment: Qt.AlignVCenter
             }
 
             NavigableToolButton {
